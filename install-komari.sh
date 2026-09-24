@@ -24,6 +24,41 @@ log_step() {
 }
 
 
+# Download and validate before touching the installed binary or service.
+# Kept inline so the installer remains usable as a single downloaded script.
+download_verified() (
+    set -e
+    url="$1"
+    destination="$2"
+    staged=$(mktemp "${destination}.download.XXXXXX") || exit 1
+    trap 'rm -f "$staged" "$staged.sha256"' EXIT
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 -o "$staged" "$url" || exit 1
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 -o "$staged.sha256" "${url}.sha256" || exit 1
+    expected=$(awk 'NR == 1 {print $1}' "$staged.sha256")
+    if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]] || [ ! -s "$staged" ]; then
+        echo "Invalid or missing release checksum/binary: $url" >&2
+        exit 1
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$staged" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$staged" | awk '{print $1}')
+    elif command -v sha256 >/dev/null 2>&1; then
+        actual=$(sha256 -q "$staged")
+    else
+        echo "A SHA-256 tool is required (sha256sum, shasum or sha256)." >&2
+        exit 1
+    fi
+    if [ "$actual" != "$expected" ]; then
+        echo "Checksum mismatch: $url" >&2
+        exit 1
+    fi
+    chmod +x "$staged" || exit 1
+    rm -f "$staged.sha256"
+    trap - EXIT
+    printf '%s\n' "$staged"
+)
+
 # Global variables
 INSTALL_DIR="/opt/komari"
 DATA_DIR="/opt/komari"
@@ -31,8 +66,8 @@ SERVICE_NAME="komari"
 BINARY_PATH="$INSTALL_DIR/komari"
 DEFAULT_PORT="25774"
 LISTEN_PORT=""
-REPO="komari-monitor/komari"
-# 发布通道: stable（稳定版）或 snapshot（快照版）
+REPO="berry-shake/komari"
+# 此 fork 只发布稳定维护版本
 CHANNEL="stable"
 # TUI 工具: whiptail / dialog / 空（回退纯文本）
 TUI_TOOL=""
@@ -163,30 +198,15 @@ show_banner() {
     clear
     echo "=============================================================="
     echo "            Komari Monitoring System Installer"
-    echo "       https://github.com/komari-monitor/komari"
+    echo "       https://github.com/berry-shake/komari"
     echo "=============================================================="
     echo
 }
 
 # 选择发布通道，结果写入全局变量 CHANNEL
 select_channel() {
-    local choice
-    choice=$(ui_menu "选择发布通道" "请选择要使用的发布通道：" \
-        "stable" "稳定版 (推荐)" \
-        "snapshot" "快照版 (最新功能)")
-
-    case "$choice" in
-        snapshot|2)
-            CHANNEL="snapshot"
-            ;;
-        stable|1|"")
-            CHANNEL="stable"
-            ;;
-        *)
-            CHANNEL="stable"
-            ;;
-    esac
-    log_info "已选择通道: $CHANNEL"
+    CHANNEL="stable"
+    log_info "使用 berry-shake fork 的正式发布版本"
 }
 
 # ==========================================================
@@ -269,25 +289,7 @@ install_dependencies() {
 
 # Get download URL based on channel
 get_download_url() {
-    local arch=$1
-    local file_name="komari-linux-${arch}"
-
-    if [ "$CHANNEL" = "snapshot" ]; then
-        # 获取最新的 snapshot 预发布版本
-        log_info "获取最新 snapshot 版本..." >&2
-        local latest_snapshot=$(curl -s "https://api.github.com/repos/${REPO}/releases" | grep '"tag_name"' | grep 'Snapshot-' | head -1 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
-
-        if [ -z "$latest_snapshot" ]; then
-            log_error "未找到 snapshot 版本" >&2
-            return 1
-        fi
-
-        log_info "最新 snapshot 版本: $latest_snapshot" >&2
-        echo "https://github.com/${REPO}/releases/download/${latest_snapshot}/${file_name}"
-    else
-        # 稳定版：使用 latest
-        echo "https://github.com/${REPO}/releases/latest/download/${file_name}"
-    fi
+    echo "https://github.com/${REPO}/releases/latest/download/komari-linux-${1}"
 }
 
 # ==========================================================
@@ -346,12 +348,15 @@ install_binary() {
     log_step "下载 Komari 二进制文件..."
     log_info "URL: $download_url"
 
-    if ! curl -L -o "$BINARY_PATH" "$download_url"; then
-        ui_msgbox "错误" "下载失败，请检查网络连接。"
+    local staged
+    if ! staged=$(download_verified "$download_url" "$BINARY_PATH"); then
+        ui_msgbox "错误" "下载或校验失败。请确认 fork 已发布完整的正式版本。"
         return 1
     fi
-
-    chmod +x "$BINARY_PATH"
+    if ! mv -f "$staged" "$BINARY_PATH"; then
+        rm -f "$staged"
+        return 1
+    fi
     log_success "Komari 二进制文件安装完成: $BINARY_PATH"
 
     if ! check_systemd; then
@@ -421,56 +426,44 @@ show_access_info() {
 
 # Upgrade function
 upgrade_komari() {
-    log_step "升级 Komari..."
-
-    if ! is_installed; then
-        ui_msgbox "错误" "Komari 未安装。请先安装它。"
+    if ! is_installed || ! check_systemd; then
+        ui_msgbox "错误" "需要已安装 Komari 并使用 systemd。"
         return 1
     fi
-
-    if ! check_systemd; then
-        ui_msgbox "错误" "未检测到 systemd。无法管理服务。"
-        return 1
-    fi
-
-    # 选择发布通道
     select_channel
-
-    log_step "停止 Komari 服务..."
-    systemctl stop ${SERVICE_NAME}.service
-
-    log_step "备份当前二进制文件..."
-    cp "$BINARY_PATH" "${BINARY_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
-
-    local arch=$(detect_arch)
-    local download_url=$(get_download_url "$arch")
-    if [ $? -ne 0 ]; then
-        log_error "获取下载链接失败，正在从备份恢复"
-        mv "${BINARY_PATH}.backup."* "$BINARY_PATH"
-        systemctl start ${SERVICE_NAME}.service
-        ui_msgbox "错误" "获取下载链接失败，已从备份恢复。"
+    local arch download_url staged backup
+    arch=$(detect_arch) || return 1
+    download_url=$(get_download_url "$arch") || return 1
+    log_step "下载并校验新版本..."
+    if ! staged=$(download_verified "$download_url" "$BINARY_PATH"); then
+        ui_msgbox "错误" "下载或校验失败，现有程序和服务未改动。"
         return 1
     fi
-
-    log_step "下载最新版本..."
-    if ! curl -L -o "$BINARY_PATH" "$download_url"; then
-        log_error "下载失败，正在从备份恢复"
-        mv "${BINARY_PATH}.backup."* "$BINARY_PATH"
-        systemctl start ${SERVICE_NAME}.service
-        ui_msgbox "错误" "下载失败，已从备份恢复。"
+    backup=$(mktemp "${BINARY_PATH}.backup.XXXXXX") || { rm -f "$staged"; return 1; }
+    if ! cp -p "$BINARY_PATH" "$backup"; then
+        rm -f "$staged" "$backup"
         return 1
     fi
-
-    chmod +x "$BINARY_PATH"
-
-    log_step "重启 Komari 服务..."
-    systemctl start ${SERVICE_NAME}.service
-
-    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
-        ui_msgbox "升级完成" "Komari 升级成功 (通道: $CHANNEL)。"
+    if ! systemctl stop "${SERVICE_NAME}.service"; then
+        rm -f "$staged"
+        return 1
+    fi
+    if mv -f "$staged" "$BINARY_PATH" && systemctl start "${SERVICE_NAME}.service"; then
+        sleep 1
+        if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+            ui_msgbox "升级完成" "Komari 升级成功。旧程序备份: $backup"
+            return 0
+        fi
+    fi
+    log_error "新版本启动失败，恢复旧程序: $backup"
+    systemctl stop "${SERVICE_NAME}.service" || true
+    rm -f "$staged"
+    if cp -p "$backup" "$BINARY_PATH" && systemctl start "${SERVICE_NAME}.service"; then
+        ui_msgbox "错误" "升级失败，已恢复旧程序。备份: $backup"
     else
-        ui_msgbox "错误" "服务在升级后未能启动，请检查日志。"
+        ui_msgbox "错误" "升级失败，自动恢复未成功。请使用备份手动恢复: $backup"
     fi
+    return 1
 }
 
 # Uninstall function
@@ -624,6 +617,8 @@ main_menu() {
 }
 
 # Main execution
-check_root
-detect_tui
-main_menu
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    check_root
+    detect_tui
+    main_menu
+fi

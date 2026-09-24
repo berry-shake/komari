@@ -1,62 +1,26 @@
-name: Build frontend theme
-description: Clone komari-web, build the default theme, and optionally upload it as an artifact.
-
+name: Build pinned fork frontend
+description: Build the berry-shake frontend commit recorded in .fork/frontend-ref.
 inputs:
-  node-version:
-    description: Node.js version used to build komari-web.
-    default: "23"
-  repository:
-    description: komari-web repository URL.
-    default: https://github.com/komari-monitor/komari-web
-  ref:
-    description: Optional komari-web ref to build. Uses the repository default branch when empty.
-    default: ""
   artifact-name:
-    description: Optional artifact name for the packed frontend theme.
-    default: ""
-
+    description: Optional artifact name for the packed frontend.
+    default: ''
 runs:
   using: composite
   steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/setup-node@v4
       with:
-        node-version: ${{ inputs.node-version }}
-
-    - name: Clone and build frontend
+        node-version: '24'
+    - shell: bash
+      run: bash scripts/build-frontend.sh
+    - name: Pack frontend
+      if: inputs.artifact-name != ''
       shell: bash
-      run: |
-        set -euxo pipefail
-        rm -rf komari-web
-        if [ -n "${{ inputs.ref }}" ]; then
-          git clone --depth=1 --branch "${{ inputs.ref }}" "${{ inputs.repository }}" komari-web
-        else
-          git clone --depth=1 "${{ inputs.repository }}" komari-web
-        fi
-        cd komari-web
-        npm install
-        npm run build
-        cd ..
-
-        mkdir -p web/public/defaultTheme/dist
-        rm -rf web/public/defaultTheme/dist/*
-        cp -r komari-web/dist/* web/public/defaultTheme/dist/
-        cp -f komari-web/komari-theme.json web/public/defaultTheme/
-        if [ -f komari-web/preview.png ]; then cp -f komari-web/preview.png web/public/defaultTheme/; fi
-        if [ -f komari-web/perview.png ]; then cp -f komari-web/perview.png web/public/defaultTheme/; fi
-        if [ -f web/public/defaultTheme/preview.png ] && [ ! -f web/public/defaultTheme/perview.png ]; then cp -f web/public/defaultTheme/preview.png web/public/defaultTheme/perview.png; fi
-        if [ -f web/public/defaultTheme/perview.png ] && [ ! -f web/public/defaultTheme/preview.png ]; then cp -f web/public/defaultTheme/perview.png web/public/defaultTheme/preview.png; fi
-
-    - name: Pack frontend artifact
-      if: ${{ inputs.artifact-name != '' }}
-      shell: bash
-      run: |
-        set -euxo pipefail
-        tar -czf "$RUNNER_TEMP/${{ inputs.artifact-name }}.tar.gz" -C web/public/defaultTheme .
-
-    - name: Upload frontend artifact
-      if: ${{ inputs.artifact-name != '' }}
-      uses: actions/upload-artifact@v4
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: tar -czf "$RUNNER_TEMP/$ARTIFACT_NAME.tar.gz" -C web/public/defaultTheme .
+    - uses: actions/upload-artifact@v4
+      if: inputs.artifact-name != ''
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ runner.temp }}/${{ inputs.artifact-name }}.tar.gz
+        if-no-files-found: error
