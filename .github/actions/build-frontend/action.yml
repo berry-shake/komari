@@ -1,0 +1,26 @@
+name: Build pinned fork frontend
+description: Build the berry-shake frontend commit recorded in .fork/frontend-ref.
+inputs:
+  artifact-name:
+    description: Optional artifact name for the packed frontend.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7.0.0
+      with:
+        node-version: '24'
+    - shell: bash
+      run: bash scripts/build-frontend.sh
+    - name: Pack frontend
+      if: inputs.artifact-name != ''
+      shell: bash
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: tar -czf "$RUNNER_TEMP/$ARTIFACT_NAME.tar.gz" -C web/public/defaultTheme .
+    - uses: actions/upload-artifact@v7.0.1
+      if: inputs.artifact-name != ''
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/${{ inputs.artifact-name }}.tar.gz
+        if-no-files-found: error

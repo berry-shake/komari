@@ -401,9 +401,22 @@ func getGitHubReleaseDownloadURL(owner, repo string) (string, error) {
 		return "", errors.New("GitHub release中没有可下载的资源")
 	}
 
-	// 返回第一个资源的下载链接
-	// 相当于shell命令: curl -s https://api.github.com/repos/owner/repo/releases/latest | jq -r ".assets[0].browser_download_url"
-	return releaseInfo.Assets[0].BrowserDownloadURL, nil
+	urls := make([]string, 0, len(releaseInfo.Assets))
+	for _, asset := range releaseInfo.Assets {
+		urls = append(urls, asset.BrowserDownloadURL)
+	}
+	return selectThemeArchive(urls)
+}
+
+// Releases may include checksums before the theme archive in their asset list.
+func selectThemeArchive(urls []string) (string, error) {
+	for _, candidate := range urls {
+		parsed, err := url.Parse(candidate)
+		if err == nil && strings.HasSuffix(strings.ToLower(parsed.Path), ".zip") {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("GitHub release中没有主题 ZIP 附件")
 }
 
 // isGitHubRepoURL 检查URL是否是GitHub仓库地址

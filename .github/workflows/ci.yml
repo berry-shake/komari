@@ -1,0 +1,65 @@
+name: CI
+on:
+  push:
+    branches: [mod-single-db]
+  pull_request:
+    branches: [mod-single-db]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: ./.github/actions/build-frontend
+        with:
+          artifact-name: komari-frontend
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: go test -short ./...
+      - run: go build -o build/check .
+  cross-build:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goos: linux, goarch: amd64, target: x86_64-linux-musl, suffix: ''}
+          - {goos: linux, goarch: arm64, target: aarch64-linux-musl, suffix: ''}
+          - {goos: linux, goarch: '386', target: x86-linux-musl, suffix: ''}
+          - {goos: linux, goarch: riscv64, target: riscv64-linux-musl, suffix: ''}
+          - {goos: linux, goarch: loong64, target: loongarch64-linux-musl, suffix: ''}
+          - {goos: windows, goarch: amd64, target: x86_64-windows-gnu, suffix: .exe}
+          - {goos: windows, goarch: arm64, target: aarch64-windows-gnu, suffix: .exe}
+          - {goos: windows, goarch: '386', target: x86-windows-gnu, suffix: .exe}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/setup-zig
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+          CC: zig cc -target ${{ matrix.target }}
+          TAG: dev
+          VERSION_HASH: ${{ github.sha }}
+          BINARY: komari-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }}
+        run: go build -trimpath -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=$TAG -X github.com/komari-monitor/komari/utils.VersionHash=$VERSION_HASH" -o "build/$BINARY" .
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: build/*
+          if-no-files-found: error

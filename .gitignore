@@ -35,3 +35,7 @@ go.work.sum
 # build
 komari
 .codex
+
+# Local verification and release output
+__pycache__/
+build/

@@ -24,6 +24,41 @@ log_step() {
 }
 
 
+# Download and validate before touching the installed binary or service.
+# Kept inline so the installer remains usable as a single downloaded script.
+download_verified() (
+    set -e
+    url="$1"
+    destination="$2"
+    staged=$(mktemp "${destination}.download.XXXXXX") || exit 1
+    trap 'rm -f "$staged" "$staged.sha256"' EXIT
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 -o "$staged" "$url" || exit 1
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 -o "$staged.sha256" "${url}.sha256" || exit 1
+    expected=$(awk 'NR == 1 {print $1}' "$staged.sha256")
+    if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]] || [ ! -s "$staged" ]; then
+        echo "Invalid or missing release checksum/binary: $url" >&2
+        exit 1
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$staged" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$staged" | awk '{print $1}')
+    elif command -v sha256 >/dev/null 2>&1; then
+        actual=$(sha256 -q "$staged")
+    else
+        echo "A SHA-256 tool is required (sha256sum, shasum or sha256)." >&2
+        exit 1
+    fi
+    if [ "$actual" != "$expected" ]; then
+        echo "Checksum mismatch: $url" >&2
+        exit 1
+    fi
+    chmod +x "$staged" || exit 1
+    rm -f "$staged.sha256"
+    trap - EXIT
+    printf '%s\n' "$staged"
+)
+
 # Global variables
 INSTALL_DIR="/opt/komari"
 DATA_DIR="/opt/komari"
@@ -31,16 +66,152 @@ SERVICE_NAME="komari"
 BINARY_PATH="$INSTALL_DIR/komari"
 DEFAULT_PORT="25774"
 LISTEN_PORT=""
+REPO="berry-shake/komari"
+# 此 fork 只发布稳定维护版本
+CHANNEL="stable"
+# TUI 工具: whiptail / dialog / 空（回退纯文本）
+TUI_TOOL=""
 
-# Show banner
+# ==========================================================
+# TUI / 交互层
+# ==========================================================
+
+# 检测可用的 TUI 工具
+detect_tui() {
+    if command -v whiptail >/dev/null 2>&1; then
+        TUI_TOOL="whiptail"
+    elif command -v dialog >/dev/null 2>&1; then
+        TUI_TOOL="dialog"
+    else
+        TUI_TOOL=""
+    fi
+}
+
+# 是否启用 TUI
+tui_enabled() {
+    [ -n "$TUI_TOOL" ]
+}
+
+# 菜单选择
+# 用法: ui_menu "标题" "提示" tag1 "item1" tag2 "item2" ...
+# 返回: 选中的 tag（输出到 stdout），取消返回非零
+ui_menu() {
+    local title="$1"; shift
+    local prompt="$1"; shift
+
+    if tui_enabled; then
+        $TUI_TOOL --title "$title" --menu "$prompt" 20 70 10 "$@" 3>&1 1>&2 2>&3
+        return $?
+    fi
+
+    # 纯文本回退
+    {
+        echo
+        echo "=============================================================="
+        echo "  $title"
+        echo "=============================================================="
+        echo "$prompt"
+        echo
+        local tag item
+        local args=("$@")
+        local i=0
+        while [ $i -lt ${#args[@]} ]; do
+            tag="${args[$i]}"
+            item="${args[$((i + 1))]}"
+            echo "  $tag) $item"
+            i=$((i + 2))
+        done
+        echo
+    } >&2
+    local choice
+    read -r -p "输入选项: " choice >&2
+    echo "$choice"
+}
+
+# 输入框
+# 用法: ui_input "标题" "提示" "默认值"
+# 返回: 输入内容（输出到 stdout），取消返回非零
+ui_input() {
+    local title="$1"
+    local prompt="$2"
+    local default="$3"
+
+    if tui_enabled; then
+        $TUI_TOOL --title "$title" --inputbox "$prompt" 12 70 "$default" 3>&1 1>&2 2>&3
+        return $?
+    fi
+
+    local input
+    read -r -p "$prompt [默认: $default]: " input >&2
+    if [ -z "$input" ]; then
+        echo "$default"
+    else
+        echo "$input"
+    fi
+}
+
+# 是/否确认
+# 用法: ui_yesno "标题" "提示"
+# 返回: 0 表示 是，1 表示 否
+ui_yesno() {
+    local title="$1"
+    local prompt="$2"
+
+    if tui_enabled; then
+        $TUI_TOOL --title "$title" --yesno "$prompt" 12 70
+        return $?
+    fi
+
+    local confirm
+    read -r -p "$prompt (Y/n): " confirm >&2
+    if [[ $confirm =~ ^[Nn]$ ]]; then
+        return 1
+    fi
+    return 0
+}
+
+# 信息提示框
+# 用法: ui_msgbox "标题" "内容"
+ui_msgbox() {
+    local title="$1"
+    local content="$2"
+
+    if tui_enabled; then
+        $TUI_TOOL --title "$title" --msgbox "$content" 20 72
+        return
+    fi
+
+    echo
+    echo "=============================================================="
+    echo "  $title"
+    echo "=============================================================="
+    echo -e "$content"
+    echo "=============================================================="
+    read -r -p "按回车键继续..." _
+}
+
+# 显示横幅（仅纯文本模式）
 show_banner() {
+    if tui_enabled; then
+        return
+    fi
     clear
     echo "=============================================================="
     echo "            Komari Monitoring System Installer"
-    echo "       https://github.com/komari-monitor/komari"
+    echo "       https://github.com/berry-shake/komari"
     echo "=============================================================="
     echo
 }
+
+# 选择发布通道，结果写入全局变量 CHANNEL
+select_channel() {
+    CHANNEL="stable"
+    log_info "使用 berry-shake fork 的正式发布版本"
+}
+
+# ==========================================================
+# 基础检查
+# ==========================================================
 
 # Check if running as root
 check_root() {
@@ -74,6 +245,9 @@ detect_arch() {
             ;;
         riscv64)
             echo "riscv64"
+            ;;
+        loongarch64|loong64)
+            echo "loong64"
             ;;
         *)
             log_error "不支持的架构: $arch"
@@ -113,19 +287,36 @@ install_dependencies() {
     fi
 }
 
+# Get download URL based on channel
+get_download_url() {
+    echo "https://github.com/${REPO}/releases/latest/download/komari-linux-${1}"
+}
+
+# ==========================================================
+# 业务操作
+# ==========================================================
+
 # Binary installation
 install_binary() {
     log_step "开始二进制安装..."
 
     if is_installed; then
-        log_info "Komari 已安装。要升级，请使用升级选项。"
+        ui_msgbox "提示" "Komari 已安装。\n如需升级，请使用主菜单中的升级选项。"
         return
     fi
 
+    # 选择发布通道
+    select_channel
 
     # 监听端口输入，校验范围 1-65535
     while true; do
-        read -p "请输入监听端口 [默认: $DEFAULT_PORT]: " input_port
+        local input_port
+        input_port=$(ui_input "监听端口" "请输入 Komari 的监听端口 (1-65535)：" "$DEFAULT_PORT")
+        # 取消输入
+        if [ $? -ne 0 ]; then
+            log_info "安装已取消"
+            return
+        fi
         if [[ -z "$input_port" ]]; then
             LISTEN_PORT="$DEFAULT_PORT"
             break
@@ -133,7 +324,7 @@ install_binary() {
             LISTEN_PORT="$input_port"
             break
         else
-            log_error "端口号无效，请输入 1-65535 之间的数字。"
+            ui_msgbox "错误" "端口号无效，请输入 1-65535 之间的数字。"
         fi
     done
 
@@ -148,26 +339,28 @@ install_binary() {
     log_step "创建数据目录: $DATA_DIR"
     mkdir -p "$DATA_DIR"
 
-    local file_name="komari-linux-${arch}"
-    local download_url="https://github.com/komari-monitor/komari/releases/latest/download/${file_name}"
+    local download_url=$(get_download_url "$arch")
+    if [ $? -ne 0 ]; then
+        ui_msgbox "错误" "获取下载链接失败，请检查网络连接或稍后重试。"
+        return 1
+    fi
 
     log_step "下载 Komari 二进制文件..."
     log_info "URL: $download_url"
 
-    if ! curl -L -o "$BINARY_PATH" "$download_url"; then
-        log_error "下载失败"
+    local staged
+    if ! staged=$(download_verified "$download_url" "$BINARY_PATH"); then
+        ui_msgbox "错误" "下载或校验失败。请确认 fork 已发布完整的正式版本。"
         return 1
     fi
-
-    chmod +x "$BINARY_PATH"
+    if ! mv -f "$staged" "$BINARY_PATH"; then
+        rm -f "$staged"
+        return 1
+    fi
     log_success "Komari 二进制文件安装完成: $BINARY_PATH"
 
     if ! check_systemd; then
-        log_step "警告：未检测到 systemd，跳过服务创建。"
-        log_step "您可以从命令行手动运行 Komari："
-        log_step "    $BINARY_PATH server -l 0.0.0.0:$LISTEN_PORT"
-        echo
-        log_success "安装完成！"
+        ui_msgbox "安装完成" "警告：未检测到 systemd，已跳过服务创建。\n\n您可以手动运行 Komari：\n    $BINARY_PATH server -l 0.0.0.0:$LISTEN_PORT"
         return
     fi
 
@@ -179,17 +372,10 @@ install_binary() {
 
     if systemctl is-active --quiet ${SERVICE_NAME}.service; then
         log_success "Komari 服务启动成功"
-        
-        log_step "正在获取初始密码..."
-        sleep 5 
-        local password=$(journalctl -u ${SERVICE_NAME} --since "1 minute ago" | grep "admin account created." | tail -n 1 | sed -e 's/.*admin account created.//')
-        if [ -z "$password" ]; then
-            log_error "未能获取初始密码，请检查日志"
-        fi
-        show_access_info "$password" "$LISTEN_PORT"
+
+        show_access_info "$LISTEN_PORT"
     else
-        log_error "Komari 服务启动失败"
-        log_info "查看日志: journalctl -u ${SERVICE_NAME} -f"
+        ui_msgbox "错误" "Komari 服务启动失败。\n\n查看日志: journalctl -u ${SERVICE_NAME} -f"
         return 1
     fi
 }
@@ -221,67 +407,63 @@ EOF
 
 # Show access information
 show_access_info() {
-    local password=$1
-    local port=${2:-$DEFAULT_PORT}
-    echo
-    log_success "安装完成！"
-    echo
-    log_info "访问信息："
-    log_info "  URL: http://$(hostname -I | awk '{print $1}'):${port}"
-    if [ -n "$password" ]; then
-        log_info "初始登录信息（仅显示一次）: $password"
-    fi
-    echo
-    log_info "服务管理命令："
-    log_info "  状态:  systemctl status $SERVICE_NAME"
-    log_info "  启动:   systemctl start $SERVICE_NAME"
-    log_info "  停止:    systemctl stop $SERVICE_NAME"
-    log_info "  重启: systemctl restart $SERVICE_NAME"
-    log_info "  日志:    journalctl -u $SERVICE_NAME -f"
+    local port=${1:-$DEFAULT_PORT}
+    local ip=$(hostname -I | awk '{print $1}')
+
+    local content="安装完成！\n\n"
+    content+="访问信息：\n"
+    content+="  URL: http://${ip}:${port}\n"
+    content+="\n首次使用请访问上述地址，按安装向导创建管理员账号。\n"
+    content+="\n服务管理命令：\n"
+    content+="  状态: systemctl status $SERVICE_NAME\n"
+    content+="  启动: systemctl start $SERVICE_NAME\n"
+    content+="  停止: systemctl stop $SERVICE_NAME\n"
+    content+="  重启: systemctl restart $SERVICE_NAME\n"
+    content+="  日志: journalctl -u $SERVICE_NAME -f"
+
+    ui_msgbox "安装完成" "$content"
 }
 
 # Upgrade function
 upgrade_komari() {
-    log_step "升级 Komari..."
-
-    if ! is_installed; then
-        log_error "Komari 未安装。请先安装它。"
+    if ! is_installed || ! check_systemd; then
+        ui_msgbox "错误" "需要已安装 Komari 并使用 systemd。"
         return 1
     fi
-
-    if ! check_systemd; then
-        log_error "未检测到 systemd。无法管理服务。"
+    select_channel
+    local arch download_url staged backup
+    arch=$(detect_arch) || return 1
+    download_url=$(get_download_url "$arch") || return 1
+    log_step "下载并校验新版本..."
+    if ! staged=$(download_verified "$download_url" "$BINARY_PATH"); then
+        ui_msgbox "错误" "下载或校验失败，现有程序和服务未改动。"
         return 1
     fi
-
-    log_step "停止 Komari 服务..."
-    systemctl stop ${SERVICE_NAME}.service
-
-    log_step "备份当前二进制文件..."
-    cp "$BINARY_PATH" "${BINARY_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
-
-    local arch=$(detect_arch)
-    local file_name="komari-linux-${arch}"
-    local download_url="https://github.com/komari-monitor/komari/releases/latest/download/${file_name}"
-
-    log_step "下载最新版本..."
-    if ! curl -L -o "$BINARY_PATH" "$download_url"; then
-        log_error "下载失败，正在从备份恢复"
-        mv "${BINARY_PATH}.backup."* "$BINARY_PATH"
-        systemctl start ${SERVICE_NAME}.service
+    backup=$(mktemp "${BINARY_PATH}.backup.XXXXXX") || { rm -f "$staged"; return 1; }
+    if ! cp -p "$BINARY_PATH" "$backup"; then
+        rm -f "$staged" "$backup"
         return 1
     fi
-
-    chmod +x "$BINARY_PATH"
-
-    log_step "重启 Komari 服务..."
-    systemctl start ${SERVICE_NAME}.service
-
-    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
-        log_success "Komari 升级成功"
+    if ! systemctl stop "${SERVICE_NAME}.service"; then
+        rm -f "$staged"
+        return 1
+    fi
+    if mv -f "$staged" "$BINARY_PATH" && systemctl start "${SERVICE_NAME}.service"; then
+        sleep 1
+        if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+            ui_msgbox "升级完成" "Komari 升级成功。旧程序备份: $backup"
+            return 0
+        fi
+    fi
+    log_error "新版本启动失败，恢复旧程序: $backup"
+    systemctl stop "${SERVICE_NAME}.service" || true
+    rm -f "$staged"
+    if cp -p "$backup" "$BINARY_PATH" && systemctl start "${SERVICE_NAME}.service"; then
+        ui_msgbox "错误" "升级失败，已恢复旧程序。备份: $backup"
     else
-        log_error "服务在升级后未能启动"
+        ui_msgbox "错误" "升级失败，自动恢复未成功。请使用备份手动恢复: $backup"
     fi
+    return 1
 }
 
 # Uninstall function
@@ -289,12 +471,11 @@ uninstall_komari() {
     log_step "卸载 Komari..."
 
     if ! is_installed; then
-        log_info "Komari 未安装"
+        ui_msgbox "提示" "Komari 未安装。"
         return 0
     fi
 
-    read -p "这将删除 Komari。您确定吗？(Y/n): " confirm
-    if [[ $confirm =~ ^[Nn]$ ]]; then
+    if ! ui_yesno "确认卸载" "这将删除 Komari 二进制文件和服务。\n\n您确定要继续吗？"; then
         log_info "卸载已取消"
         return 0
     fi
@@ -314,102 +495,130 @@ uninstall_komari() {
     rmdir "$INSTALL_DIR" 2>/dev/null || log_info "数据目录 $INSTALL_DIR 不为空，未删除"
     log_success "Komari 二进制文件已删除"
 
-    log_success "Komari 卸载完成"
-    log_info "数据文件保留在 $DATA_DIR"
+    ui_msgbox "卸载完成" "Komari 卸载完成。\n\n数据文件保留在 $DATA_DIR"
 }
 
 # Show service status
 show_status() {
     if ! is_installed; then
-        log_error "Komari 未安装"
+        ui_msgbox "错误" "Komari 未安装。"
         return
     fi
     if ! check_systemd; then
-        log_error "未检测到 systemd。无法获取服务状态。"
+        ui_msgbox "错误" "未检测到 systemd。无法获取服务状态。"
         return
     fi
-    log_step "Komari 服务状态:"
-    systemctl status ${SERVICE_NAME}.service --no-pager -l
+    if tui_enabled; then
+        local status_output
+        status_output=$(systemctl status ${SERVICE_NAME}.service --no-pager -l 2>&1)
+        ui_msgbox "服务状态" "$status_output"
+    else
+        log_step "Komari 服务状态:"
+        systemctl status ${SERVICE_NAME}.service --no-pager -l
+        read -r -p "按回车键继续..." _
+    fi
 }
 
 # Show service logs
 show_logs() {
     if ! is_installed; then
-        log_error "Komari 未安装"
+        ui_msgbox "错误" "Komari 未安装。"
         return
     fi
     if ! check_systemd; then
-        log_error "未检测到 systemd。无法获取服务日志。"
+        ui_msgbox "错误" "未检测到 systemd。无法获取服务日志。"
         return
     fi
-    log_step "查看 Komari 服务日志..."
+    # 日志为实时流，直接在终端显示
+    if tui_enabled; then
+        clear
+    fi
+    log_step "查看 Komari 服务日志 (按 Ctrl+C 退出)..."
     journalctl -u ${SERVICE_NAME} -f --no-pager
 }
 
 # Restart service
 restart_service() {
     if ! is_installed; then
-        log_error "Komari 未安装"
+        ui_msgbox "错误" "Komari 未安装。"
         return
     fi
     if ! check_systemd; then
-        log_error "未检测到 systemd。无法重启服务。"
+        ui_msgbox "错误" "未检测到 systemd。无法重启服务。"
         return
     fi
     log_step "重启 Komari 服务..."
     systemctl restart ${SERVICE_NAME}.service
     if systemctl is-active --quiet ${SERVICE_NAME}.service; then
-        log_success "服务重启成功"
+        ui_msgbox "成功" "服务重启成功。"
     else
-        log_error "服务重启失败"
+        ui_msgbox "错误" "服务重启失败，请检查日志。"
     fi
 }
 
 # Stop service
 stop_service() {
     if ! is_installed; then
-        log_error "Komari 未安装"
+        ui_msgbox "错误" "Komari 未安装。"
         return
     fi
     if ! check_systemd; then
-        log_error "未检测到 systemd。无法停止服务。"
+        ui_msgbox "错误" "未检测到 systemd。无法停止服务。"
         return
     fi
     log_step "停止 Komari 服务..."
     systemctl stop ${SERVICE_NAME}.service
-    log_success "服务已停止"
+    ui_msgbox "成功" "服务已停止。"
 }
 
 
 # Main menu
 main_menu() {
-    show_banner
-    echo "请选择操作："
-    echo "  1) 安装 Komari"
-    echo "  2) 升级 Komari"
-    echo "  3) 卸载 Komari"
-    echo "  4) 查看状态"
-    echo "  5) 查看日志"
-    echo "  6) 重启服务"
-    echo "  7) 停止服务"
-    echo "  8) 退出"
-    echo
+    while true; do
+        show_banner
 
-    read -p "输入选项 [1-8]: " choice
+        local choice
+        choice=$(ui_menu "Komari 监控系统安装器" "请选择操作：" \
+            "1" "安装 Komari" \
+            "2" "升级 Komari" \
+            "3" "卸载 Komari" \
+            "4" "查看状态" \
+            "5" "查看日志" \
+            "6" "重启服务" \
+            "7" "停止服务" \
+            "8" "退出")
 
-    case $choice in
-        1) install_binary ;;
-        2) upgrade_komari ;;
-        3) uninstall_komari ;;
-        4) show_status ;;
-        5) show_logs ;;
-        6) restart_service ;;
-        7) stop_service ;;
-        8) exit 0 ;;
-        *) log_error "无效选项" ;;
-    esac
+        # 用户在 TUI 中取消（ESC/Cancel）则退出
+        if [ $? -ne 0 ] && tui_enabled; then
+            clear
+            exit 0
+        fi
+
+        case $choice in
+            1) install_binary ;;
+            2) upgrade_komari ;;
+            3) uninstall_komari ;;
+            4) show_status ;;
+            5) show_logs ;;
+            6) restart_service ;;
+            7) stop_service ;;
+            8) 
+                tui_enabled && clear
+                exit 0 
+                ;;
+            *) ui_msgbox "错误" "无效选项" ;;
+        esac
+
+        # 纯文本模式下单次执行后退出循环（保持原有行为，避免输出被覆盖）
+        if ! tui_enabled; then
+            break
+        fi
+    done
 }
 
 # Main execution
-check_root
-main_menu
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    check_root
+    detect_tui
+    main_menu
+fi
