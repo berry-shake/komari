@@ -135,7 +135,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$TAG" build/* --repo "$GITHUB_komariSITORY" --verify-tag --draft --title "$TAG" --generate-notes
-          gh release edit "$TAG" --repo "$GITHUB_komariSITORY" --draft=false --prerelease=false --latest
+          set -euo pipefail
+          gh release create "$TAG" build/* --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$TAG" --generate-notes
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest
       - name: Promote image latest
         run: docker buildx imagetools create --tag ghcr.io/berry-shake/komari:latest "ghcr.io/berry-shake/komari:$TAG"
