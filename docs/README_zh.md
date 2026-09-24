@@ -1,5 +1,7 @@
 # Komari
 
+> berry-shake fork: [FORK.md](../FORK.md) · `mod` · SQLite `komari.db`
+
 ![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fkomari-monitor%2Fkomari&label=&icon=github&color=%23a370f7&message=&style=flat&tz=UTC)
 
 ![komari](https://socialify.git.ci/komari-monitor/komari/image?description=1&font=Inter&forks=1&issues=1&language=1&logo=https%3A%2F%2Fraw.githubusercontent.com%2Fkomari-monitor%2Fkomari-web%2Fd54ce1288df41ead08aa19f8700186e68028a889%2Fpublic%2Ffavicon.png&name=1&owner=1&pattern=Plus&pulls=1&stargazers=1&theme=Auto)
@@ -31,7 +33,7 @@ Komari 是一款轻量级的自托管服务器监控工具，旨在提供简单�
 适用于使用了 systemd 的发行版（Ubuntu、Debian...）。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/komari-monitor/komari/main/install-komari.sh -o install-komari.sh
+curl -fsSL https://raw.githubusercontent.com/berry-shake/komari/mod/install-komari.sh -o install-komari.sh
 chmod +x install-komari.sh
 sudo ./install-komari.sh
 ```
@@ -48,7 +50,7 @@ sudo ./install-komari.sh
      -p 25774:25774 \
      -v $(pwd)/data:/app/data \
      --name komari \
-     ghcr.io/komari-monitor/komari:latest
+     ghcr.io/berry-shake/komari:latest
    ```
 3. 查看默认账号和密码：
    ```bash
@@ -61,7 +63,7 @@ sudo ./install-komari.sh
 
 ### 3. 二进制文件部署
 
-1. 访问 Komari 的 [GitHub Release 页面](https://github.com/komari-monitor/komari/releases) 下载适用于你操作系统的最新二进制文件。
+1. 访问 Komari 的 [GitHub Release 页面](https://github.com/berry-shake/komari/releases) 下载适用于你操作系统的最新二进制文件。
 2. 运行 Komari：
    ```bash
    ./komari server -l 0.0.0.0:25774
@@ -76,22 +78,23 @@ sudo ./install-komari.sh
 
 #### 依赖
 
-- Go 1.18+ 和 Node.js 20+（手工构建）
+- Go 1.24.11+ 和 Node.js 24+（手工构建）
 
 1. 构建前端静态文件：
    ```bash
-   git clone https://github.com/komari-monitor/komari-web
+   git clone --branch mod https://github.com/berry-shake/komari-web
    cd komari-web
-   npm install
+   npm ci
    npm run build
    ```
 2. 构建后端：
    ```bash
-   git clone https://github.com/komari-monitor/komari
+   git clone --branch mod https://github.com/berry-shake/komari
    cd komari
    ```
    将步骤1中生成的静态文件复制到 `komari` 项目根目录下的 `/web/public/defaultTheme/dist` 文件夹，并将 `komari-theme.json` 与 `preview.png`/`perview.png` 复制到 `/web/public/defaultTheme`。
    ```bash
+   bash scripts/build-frontend.sh
    go build -o komari
    ```
 3. 运行：

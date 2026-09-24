@@ -36,7 +36,7 @@ Available on 1Panel App Store. Install via **App Store > Utilities > Komari**.
 Suitable for distributions using systemd (Ubuntu, Debian...).
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/komari-monitor/komari/main/install-komari.sh -o install-komari.sh
+curl -fsSL https://raw.githubusercontent.com/berry-shake/komari/mod/install-komari.sh -o install-komari.sh
 chmod +x install-komari.sh
 sudo ./install-komari.sh
 ```
@@ -53,7 +53,7 @@ sudo ./install-komari.sh
      -p 25774:25774 \
      -v $(pwd)/data:/app/data \
      --name komari \
-     ghcr.io/komari-monitor/komari:latest
+     ghcr.io/berry-shake/komari:latest
    ```
 3. View the default username and password:
    ```bash
@@ -66,7 +66,7 @@ sudo ./install-komari.sh
 
 ### 3. Binary File Deployment
 
-1. Visit Komari's [GitHub Release page](https://github.com/komari-monitor/komari/releases) to download the latest binary for your operating system.
+1. Visit Komari's [GitHub Release page](https://github.com/berry-shake/komari/releases) to download the latest binary for your operating system.
 2. Run Komari:
    ```bash
    ./komari server -l 0.0.0.0:25774
@@ -81,22 +81,23 @@ sudo ./install-komari.sh
 
 #### Dependencies
 
-- Go 1.18+ and Node.js 20+ (for manual build)
+- Go 1.24.11+ and Node.js 24+ (for manual build)
 
 1. Build the frontend static files:
    ```bash
-   git clone https://github.com/komari-monitor/komari-web
+   git clone --branch mod https://github.com/berry-shake/komari-web
    cd komari-web
-   npm install
+   npm ci
    npm run build
    ```
 2. Build the backend:
    ```bash
-   git clone https://github.com/komari-monitor/komari
+   git clone --branch mod https://github.com/berry-shake/komari
    cd komari
    ```
    Copy the static files generated in step 1 to the `/web/public/defaultTheme/dist` folder in the root of the `komari` project, and copy `komari-theme.json` + `preview.png`/`perview.png` to `/web/public/defaultTheme`.
    ```bash
+   bash scripts/build-frontend.sh
    go build -o komari
    ```
 3. Run:
