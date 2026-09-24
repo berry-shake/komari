@@ -20,7 +20,7 @@ jobs:
     outputs:
       sha: ${{ steps.prepare.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: mod
           fetch-depth: 0
@@ -32,7 +32,7 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.sha }}
       - uses: ./.github/actions/build-frontend
@@ -42,12 +42,13 @@ jobs:
     needs: [prepare, frontend]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.sha }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
       - uses: ./.github/actions/restore-frontend
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: go test -short ./...
@@ -67,12 +68,13 @@ jobs:
           - {goos: windows, goarch: arm64, target: aarch64-windows-gnu, suffix: .exe}
           - {goos: windows, goarch: '386', target: x86-windows-gnu, suffix: .exe}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.sha }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
       - uses: ./.github/actions/restore-frontend
       - uses: ./.github/actions/setup-zig
       - name: Build
@@ -84,7 +86,7 @@ jobs:
           VERSION_HASH: ${{ needs.prepare.outputs.sha }}
           BINARY: komari-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }}
         run: go build -trimpath -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=$TAG -X github.com/komari-monitor/komari/utils.VersionHash=$VERSION_HASH" -o "build/$BINARY" .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
           path: build/*
@@ -96,25 +98,25 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.sha }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-*
           path: build
           merge-multiple: true
       - run: python3 scripts/release.py checksums build
       - run: cp build/komari-linux-amd64 build/komari-linux-arm64 .
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@v4.4.0
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish versioned image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7.4.0
         with:
           context: .
           push: true

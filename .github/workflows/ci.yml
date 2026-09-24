@@ -14,10 +14,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
       - uses: ./.github/actions/build-frontend
         with:
           artifact-name: komari-frontend
@@ -40,10 +41,11 @@ jobs:
           - {goos: windows, goarch: arm64, target: aarch64-windows-gnu, suffix: .exe}
           - {goos: windows, goarch: '386', target: x86-windows-gnu, suffix: .exe}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
       - uses: ./.github/actions/restore-frontend
       - uses: ./.github/actions/setup-zig
       - name: Build
@@ -56,7 +58,7 @@ jobs:
           VERSION_HASH: ${{ github.sha }}
           BINARY: komari-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }}
         run: go build -trimpath -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=$TAG -X github.com/komari-monitor/komari/utils.VersionHash=$VERSION_HASH" -o "build/$BINARY" .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
           path: build/*
