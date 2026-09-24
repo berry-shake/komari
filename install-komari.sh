@@ -602,9 +602,9 @@ main_menu() {
             5) show_logs ;;
             6) restart_service ;;
             7) stop_service ;;
-            8) 
+            8)
                 tui_enabled && clear
-                exit 0 
+                exit 0
                 ;;
             *) ui_msgbox "错误" "无效选项" ;;
         esac
