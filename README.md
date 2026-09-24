@@ -1,6 +1,6 @@
 # Komari
 
-> 本仓库由 **berry-shake** 基于固定上游版本维护，默认分支为 `mod-single-db`。构建、安装、版本更新和手动发布请先阅读 [FORK.md](./FORK.md)。下方保留上游介绍与署名。
+> 本仓库由 **berry-shake** 基于固定上游版本维护，默认分支为 `mod`。构建、安装、版本更新和手动发布请先阅读 [FORK.md](./FORK.md)。下方保留上游介绍与署名。
 
 ![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fkomari-monitor%2Fkomari&label=&icon=github&color=%23a370f7&message=&style=flat&tz=UTC)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/komari-monitor/komari)

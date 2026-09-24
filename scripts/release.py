@@ -39,12 +39,12 @@ def run(*args):
 
 def prepare(tag, base, repository):
     version_key(tag)  # Validate before passing the ref to any external command.
-    if os.environ.get('GITHUB_REF') != 'refs/heads/mod-single-db':
-        raise ValueError('Run this workflow from the mod-single-db branch')
+    if os.environ.get('GITHUB_REF') != 'refs/heads/mod':
+        raise ValueError('Run this workflow from the mod branch')
     if os.environ.get('GITHUB_REPOSITORY') != repository:
         raise ValueError('Unexpected publishing repository')
     sha = run('git', 'rev-parse', '--verify', f'refs/tags/{tag}^{{commit}}')
-    subprocess.run(['git', 'merge-base', '--is-ancestor', sha, 'origin/mod-single-db'], check=True)
+    subprocess.run(['git', 'merge-base', '--is-ancestor', sha, 'origin/mod'], check=True)
     pages = json.loads(run('gh', 'api', '--paginate', '--slurp', f'repos/{repository}/releases?per_page=100'))
     check_releases(tag, base, [release for page in pages for release in page])
     if repository.endswith('/komari-web'):

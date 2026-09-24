@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: mod-single-db
+          ref: mod
           fetch-depth: 0
       - id: prepare
         env:
