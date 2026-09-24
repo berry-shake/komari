@@ -4,8 +4,8 @@
 
 | 仓库 | 上游代码基线 | 本次 fork 版本 |
 | --- | --- | --- |
-| komari | 1.2.3 (`618ced3b8f0abd53d0e9ec1db0d90a948d2d221a`) | 1.2.3-fork.2 |
-| komari-web | 1.2.3 (`296fe766fab39c2ad7a4a3dd8caf3dcfebae3222`) | 1.2.3-fork.2 |
+| komari | 1.2.3 (`618ced3b8f0abd53d0e9ec1db0d90a948d2d221a`) | 1.2.3-fork.3 |
+| komari-web | 1.2.3 (`296fe766fab39c2ad7a4a3dd8caf3dcfebae3222`) | 1.2.3-fork.3 |
 | komari-agent | 1.2.13 | 1.2.13-fork.2 |
 
 服务端 1.2.3 是引入新指标存储模块之前的最后一个正式版本。1.2.5 虽然尚未启用独立监控库，已新增 pkg/metric 模块；本维护线不包含这套新机制。前端使用配套 1.2.3，Agent 使用同期正式版 1.2.13。
@@ -42,3 +42,7 @@ gh -R berry-shake/REPOSITORY workflow run release.yml --ref mod -f tag=TAG
 ## 本地验证
 
 使用 go.mod 声明的 Go 版本、Node.js 24、Python 3.11+、C 编译器。前端 npm ci/test/build；服务端 scripts/build-frontend.sh、Python 脚本测试和 go test -short ./...；Agent 同样执行 Go/Python 测试及发布矩阵交叉编译。未注入版本的开发构建显示 dev。
+
+## 原生 DDNS
+
+1.2.3-fork.3 将 Komari DDNS v0.1.3 的 Cloudflare 功能移植为服务端 Go 模块及后台 `/admin/ddns` 页面。设置、记录、状态和最近 500 条日志均存入同一个 `komari.db`，无需插件运行时。来源和使用说明见 [DDNS 文档](https://github.com/berry-shake/komari/blob/mod/docs/DDNS.md)。Agent 继续使用 1.2.13-fork.2。

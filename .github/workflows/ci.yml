@@ -24,6 +24,7 @@ jobs:
           artifact-name: komari-frontend
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: go test -short ./...
+      - run: go test -race ./pkg/ddns ./web/api/admin
       - run: go build -o build/check .
   cross-build:
     needs: check

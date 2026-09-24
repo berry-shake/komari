@@ -2,6 +2,7 @@ package router
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/komari-monitor/komari/pkg/ddns"
 	"github.com/komari-monitor/komari/web/api"
 	"github.com/komari-monitor/komari/web/api/admin"
 	"github.com/komari-monitor/komari/web/api/admin/clipboard"
@@ -56,6 +57,7 @@ func Register(r *gin.Engine) {
 	// #region 管理员
 	adminAuthrized := r.Group("/api/admin", api.RequireRole(api.RoleAdmin))
 	{
+		admin.RegisterDDNSRoutes(adminAuthrized, ddns.Default())
 		adminAuthrized.GET("/download/backup", admin.DownloadBackup)
 		adminAuthrized.POST("/upload/backup", admin.UploadBackup)
 		// test

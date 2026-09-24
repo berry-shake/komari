@@ -29,7 +29,7 @@ require golang.org/x/crypto v0.39.0 // indirect
 
 // HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net #2
 // golang.org/x/net vulnerable to Cross-site Scripting #4
-require golang.org/x/net v0.41.0 // indirect
+require golang.org/x/net v0.41.0
 
 require (
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect

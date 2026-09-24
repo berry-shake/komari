@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/cmd/flags"
 	"github.com/komari-monitor/komari/pkg/corn"
+	"github.com/komari-monitor/komari/pkg/ddns"
 	"github.com/komari-monitor/komari/web/api"
 
 	"github.com/komari-monitor/komari/database"
@@ -60,6 +61,7 @@ func RunServer() {
 		log.Fatalf("Failed to create theme directory: %v", err)
 	}
 	InitDatabase()
+	ddns.Default().Start()
 	if utils.VersionHash != "unknown" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -226,6 +228,7 @@ func minuteScheduledWork() {
 }
 
 func OnShutdown() {
+	ddns.Default().Stop()
 	auditlog.Log("", "", "server is shutting down", "info")
 	corn.StopAll()
 	cloudflared.Shutdown()

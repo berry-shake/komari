@@ -52,6 +52,7 @@ jobs:
       - uses: ./.github/actions/restore-frontend
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: go test -short ./...
+      - run: go test -race ./pkg/ddns ./web/api/admin
   binaries:
     needs: [prepare, frontend]
     runs-on: ubuntu-latest
