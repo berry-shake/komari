@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing immutable fork tag (1.2.3-fork.N)'
+        description: 'Existing immutable numeric tag (e.g. 1.2.4)'
         required: true
         type: string
 permissions:
@@ -27,7 +27,7 @@ jobs:
       - id: prepare
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/release.py prepare "$TAG" 1.2.3 berry-shake/komari
+        run: python3 scripts/release.py prepare "$TAG" berry-shake/komari
   frontend:
     needs: prepare
     runs-on: ubuntu-latest

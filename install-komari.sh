@@ -67,7 +67,7 @@ BINARY_PATH="$INSTALL_DIR/komari"
 DEFAULT_PORT="25774"
 LISTEN_PORT=""
 REPO="berry-shake/komari"
-# 此 fork 只发布稳定维护版本
+# 此发行版只发布稳定维护版本
 CHANNEL="stable"
 # TUI 工具: whiptail / dialog / 空（回退纯文本）
 TUI_TOOL=""
@@ -206,7 +206,7 @@ show_banner() {
 # 选择发布通道，结果写入全局变量 CHANNEL
 select_channel() {
     CHANNEL="stable"
-    log_info "使用 berry-shake fork 的正式发布版本"
+    log_info "使用 berry-shake 的正式发布版本"
 }
 
 # ==========================================================
@@ -350,7 +350,7 @@ install_binary() {
 
     local staged
     if ! staged=$(download_verified "$download_url" "$BINARY_PATH"); then
-        ui_msgbox "错误" "下载或校验失败。请确认 fork 已发布完整的正式版本。"
+        ui_msgbox "错误" "下载或校验失败。请确认 berry-shake 已发布完整的正式版本。"
         return 1
     fi
     if ! mv -f "$staged" "$BINARY_PATH"; then

@@ -236,7 +236,7 @@ func TestProviderErrorRedactionAndAmbiguousRecords(t *testing.T) {
 		t.Fatalf("provider error: %+v %v", result, err)
 	}
 	records, _ := s.Records()
-	logs, _ := s.Logs("", "", 100)
+	logs, _ := s.Logs("", "", 1, 100)
 	raw, _ := json.Marshal([]any{result, records, logs})
 	if strings.Contains(string(raw), "global-secret") || !strings.Contains(string(raw), "REDACTED") {
 		t.Fatal("secret redaction missing")
@@ -324,7 +324,7 @@ func TestValidationTokenPreservationAndBoundedLogs(t *testing.T) {
 	if err := appendLog(s.db, models.DDNSLog{Action: "sync"}); err != nil {
 		t.Fatal(err)
 	}
-	logs, err := s.Logs("", "", 1000)
+	logs, err := s.Logs("", "", 1, 1000)
 	if err != nil || logs.Total != 500 || len(logs.Logs) != 500 {
 		t.Fatalf("retention: %d %d %v", logs.Total, len(logs.Logs), err)
 	}

@@ -1,48 +1,52 @@
 # berry-shake 单库维护版
 
-当前维护/默认分支为 `mod`。仓库只保留 `mod` 与上游默认分支（服务端和 Agent 为 `main`，前端为 `radix`）。旧维护提交保留在 Git 历史中；部署备份用于回退，过时 Release、标签和构建产物在迁移验证通过后清理。
+维护/默认分支为 `mod`。仓库只保留 `mod` 与上游默认分支（服务端和 Agent 为 `main`，前端为 `radix`）。
 
-| 仓库 | 上游代码基线 | 本次 fork 版本 |
+## 独立发行版本
+
+从 **1.2.4** 开始，三个仓库统一使用纯数字 `主版本.次版本.修订号`，不加 `v` 或 `fork` 后缀。此版本号属于 berry-shake 发行版，与上游版本独立；例如 1.2.4 不表示将上游代码升级到 1.2.4。
+
+| 仓库 | 上游代码基线 | 当前发行版本 |
 | --- | --- | --- |
-| komari | 1.2.3 (`618ced3b8f0abd53d0e9ec1db0d90a948d2d221a`) | 1.2.3-fork.3 |
-| komari-web | 1.2.3 (`296fe766fab39c2ad7a4a3dd8caf3dcfebae3222`) | 1.2.3-fork.3 |
-| komari-agent | 1.2.13 | 1.2.13-fork.2 |
+| komari | 1.2.3 (`618ced3b8f0abd53d0e9ec1db0d90a948d2d221a`) | 1.2.4 |
+| komari-web | 1.2.3 (`296fe766fab39c2ad7a4a3dd8caf3dcfebae3222`) | 1.2.4 |
+| komari-agent | 1.2.13 | 1.2.4 |
 
-服务端 1.2.3 是引入新指标存储模块之前的最后一个正式版本。1.2.5 虽然尚未启用独立监控库，已新增 pkg/metric 模块；本维护线不包含这套新机制。前端使用配套 1.2.3，Agent 使用同期正式版 1.2.13。
+服务端继续使用 1.2.3 的单 SQLite 设计，不引入新指标存储模块，不创建 metrics.db，不连接 PostgreSQL。节点 UUID/Token、延迟任务、GitHub OAuth、账号绑定和主题配置保持兼容。WAL/SHM 是同一 SQLite 数据库的活动文件。
 
-## 运行和数据
+版本比较按三个数字逐项进行：1.2.9 < 1.2.10 < 1.3.0。候选更新必须来自 berry-shake 对应仓库、为正式 Release、标签为纯数字且不低于 1.2.4。旧 fork 标签、草稿、预发布标签不参与新版本选择。更新不会查询上游仓库。
 
-配置和监控记录使用同一个 `data/komari.db`。SQLite 的 `-wal`/`-shm` 是同库日志文件，不是第二个监控数据库。不创建 `metrics.db`，不连接 PostgreSQL。迁移保留节点 UUID/Token、全部节点配置、延迟检测目标和分配、GitHub OAuth 和用户绑定及主题设置；历史监控数据可重新开始。
+旧 Agent 1.2.13-fork.N 使用旧标签筛选规则，不能自动发现本次 1.2.4；首次更名切换须显式部署 1.2.4，之后继续正常自动更新。此次更名属于发行编号迁移，不能用上游基线数字判断升级/降级。
 
-服务端内嵌前端由 `.fork/frontend-ref` 锁定本 fork 的完整 commit SHA。现有第三方主题、作者信息、Go module/import 路径仍保留原值。
+拉取上游代码时使用 `git fetch upstream --no-tags`，避免将上游同名标签导入本地发行标签空间；不要将上游标签推送到 origin。
 
-## 更新来源
+## 更新和构建来源
 
-服务端和后台版本检测：berry-shake/komari。探针自更新与安装脚本：berry-shake/komari-agent。默认主题：berry-shake/komari-web。容器：ghcr.io/berry-shake/komari 与 ghcr.io/berry-shake/komari-agent。安装脚本来自 `mod`。
+服务端与后台更新：berry-shake/komari。Agent 安装及自更新：berry-shake/komari-agent。默认主题：berry-shake/komari-web。镜像：ghcr.io/berry-shake/komari 和 ghcr.io/berry-shake/komari-agent。安装脚本来自 `mod`。
 
-后台版本提示仅接受 `1.2.3-fork.N` 单库维护线，避免其他基线被当作升级。Agent 使用 `1.2.13-fork.N`，未设置 `--disable-auto-update` 时从自己的 fork 检查更新；容器探针通过更换镜像更新。`--disable-web-ssh` 继续禁用 Web SSH/远程执行。
+服务端内嵌前端由 `.fork/frontend-ref` 锁定完整 commit SHA。Go module/import 路径、第三方主题和原作者信息保持原值。`--disable-auto-update` 和 `--disable-web-ssh` 行为不变；容器 Agent 通过更换镜像更新。
 
 ## CI 和发布
 
-CI 在维护分支 push、PR 或手动触发时执行，不发布。Release 仅可从 `mod` 手动触发；必须提供已存在且属于该分支历史的 fork 标签。拒绝覆盖已有 Release/草稿，拒绝在同一维护线上倒退修订号；其他基线不参与该线版本排序。
+CI 在 mod push、PR 或手动触发时执行，不发布。Release 仅从 mod 手动触发，要求已经存在且属于该分支历史的纯数字标签。拒绝覆盖任何已有 Release/草稿，拒绝倒退到已发布数字版本；旧 fork 标签只在首次迁移预检中跳过，不重新发布。
 
-发布先测试与构建，生成每件附件的 `.sha256` 和 SHA256SUMS，再发布稳定 Release（prerelease=false）及版本镜像，最后将 GitHub latest 和镜像 latest 指向当前单库维护线。首次降基线切换必须由运维按备份方案显式部署，不能依赖版本数字排序自动降级。
-
-前端先发布并固定 SHA，再发布服务端；Agent 可独立发布。服务端 Linux amd64/arm64 运行验证均需确认只有 komari.db，Agent 上报和延迟检测正常，之后才部署。
+前端先验证、发布并固定 SHA，再发布服务端；Agent 可独立发布。发布生成每个附件的 .sha256 和 SHA256SUMS，正式 Release 与版本镜像完成后，将 GitHub latest 和镜像 latest 指向本次版本。镜像 latest 的用户可能由其自行配置的更新器自动升级。
 
 ```sh
 git switch mod
-git tag -a TAG -m TAG
-git push origin TAG
-gh -R berry-shake/REPOSITORY workflow run release.yml --ref mod -f tag=TAG
+git tag -a 1.2.4 -m 1.2.4
+git push origin mod refs/tags/1.2.4
+gh -R berry-shake/REPOSITORY workflow run release.yml --ref mod -f tag=1.2.4
 ```
 
-安装器先下载到临时文件并验证 SHA256，成功后才停止/替换服务。服务端启动失败自动回退旧二进制；Agent 保存旧二进制，服务配置保持使用者指定值。版本发布资产不可覆盖，修复需递增 fork.N。
-
-## 本地验证
-
-使用 go.mod 声明的 Go 版本、Node.js 24、Python 3.11+、C 编译器。前端 npm ci/test/build；服务端 scripts/build-frontend.sh、Python 脚本测试和 go test -short ./...；Agent 同样执行 Go/Python 测试及发布矩阵交叉编译。未注入版本的开发构建显示 dev。
+已发布资产不可覆盖，修复递增为 1.2.5 等新版本。安装器先下载临时文件并验证 SHA256，再替换服务；原安装参数继续保留。
 
 ## 原生 DDNS
 
-1.2.3-fork.3 将 Komari DDNS v0.1.3 的 Cloudflare 功能移植为服务端 Go 模块及后台 `/admin/ddns` 页面。设置、记录、状态和最近 500 条日志均存入同一个 `komari.db`，无需插件运行时。来源和使用说明见 [DDNS 文档](https://github.com/berry-shake/komari/blob/mod/docs/DDNS.md)。Agent 继续使用 1.2.13-fork.2。
+原生 DDNS 使用 Go 模块与后台 `/admin/ddns`，Cloudflare 设置、记录、状态和最近 500 条日志均存入 komari.db，无需插件运行时。1.2.4 增加服务端日志分页，后台默认每页 20 条，可切换 50/100 条，支持筛选、首末页及前后翻页；清空和刷新回到第一页。
+
+来源、许可和使用说明见 [DDNS 文档](https://github.com/berry-shake/komari/blob/mod/docs/DDNS.md)。
+
+## 本地验证
+
+使用 go.mod 声明的 Go 工具链、Node.js 24、Python 3.11+、C 编译器。前端 npm ci/test/build；服务端 scripts/build-frontend.sh、Python 脚本测试、go test -short ./... 和 DDNS/API race 测试；Agent 执行 Go/Python 测试、更新逻辑 race 测试及发布矩阵构建。正式 Linux amd64/arm64 镜像需验证 Agent 上报、延迟检测、单库持久化和日志分页后交付。未注入版本的开发构建显示 dev。

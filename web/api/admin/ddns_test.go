@@ -91,4 +91,28 @@ func TestDDNSAdminAPI(t *testing.T) {
 	call(api.RoleAdmin, "DELETE", "records/"+envelope.Data.ID, "", 200)
 	call(api.RoleAdmin, "DELETE", "records/"+envelope.Data.ID, "", 404)
 	call(api.RoleAdmin, "DELETE", "logs", "", 200)
+	rows := make([]models.DDNSLog, 25)
+	for i := range rows {
+		rows[i] = models.DDNSLog{RecordName: "home.example.com", Action: "skip", Success: true}
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Data ddns.LogView `json:"data"`
+	}
+	raw = call(api.RoleAdmin, "GET", "logs?page=2&page_size=20&record=home.example.com&action=skip", "", 200)
+	if err := json.Unmarshal([]byte(raw), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Data.Total != 25 || page.Data.Page != 2 || page.Data.TotalPages != 2 || page.Data.PageSize != 20 || len(page.Data.Logs) != 5 {
+		t.Fatalf("unexpected paginated response: %s", raw)
+	}
+	for _, query := range []string{"page=0", "page=-1", "page=abc", "page=99999999999999999999999", "page_size=0", "page_size=-2", "page_size=x", "limit=oops"} {
+		call(api.RoleAdmin, "GET", "logs?"+query, "", 400)
+	}
+	raw = call(api.RoleAdmin, "GET", "logs?limit=5", "", 200)
+	if err := json.Unmarshal([]byte(raw), &page); err != nil || len(page.Data.Logs) != 5 || page.Data.PageSize != 5 {
+		t.Fatalf("legacy limit parameter: %s %v", raw, err)
+	}
 }

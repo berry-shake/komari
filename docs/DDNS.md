@@ -1,6 +1,6 @@
 # 原生 Cloudflare DDNS
 
-自 1.2.3-fork.3 起，后台侧栏 **DDNS**（`/admin/ddns`）可管理动态解析。功能移植自 [Komari DDNS v0.1.3](https://github.com/yunjianj/Komari-DDNS/tree/v0.1.3)，来源为 [Komari 插件市场](https://github.com/komari-monitor/plugin-market) 的 `cf-ddns`。原作者：穿云箭（yunjianj），MIT 许可；许可原文保留在 [licenses/Komari-DDNS-MIT.txt](licenses/Komari-DDNS-MIT.txt)。本实现使用 Go 和现有 React 管理后台，无需插件引擎或新增数据库。
+当前 1.2.4 中，后台侧栏 **DDNS**（`/admin/ddns`）可管理动态解析。功能移植自 [Komari DDNS v0.1.3](https://github.com/yunjianj/Komari-DDNS/tree/v0.1.3)，来源为 [Komari 插件市场](https://github.com/komari-monitor/plugin-market) 的 `cf-ddns`。原作者：穿云箭（yunjianj），MIT 许可；许可原文保留在 [licenses/Komari-DDNS-MIT.txt](licenses/Komari-DDNS-MIT.txt)。本实现使用 Go 和现有 React 管理后台，无需插件引擎或新增数据库。
 
 ## 使用
 
@@ -35,3 +35,9 @@ Cloudflare 中没有对应记录时创建；IP、代理开关或 TTL 变化时�
 记录示例：`{"record_name":"home.example.com","record_type":"A","zone_id":"","source_node":["NODE_UUID"],"ttl":60,"proxied":false,"comment":""}`。可选 `api_token`、`clear_api_token` 用于单条记录覆盖或恢复使用全局 Token。自动 Zone 发现按最长后缀匹配，分页查询并按 Token 分别缓存一轮结果。单次 HTTP 请求超时 20 秒，整轮同步最长 2 分钟。
 
 旧版插件配置不会在新程序启动时自动启用；迁移应先备份，导入 Token 和记录，在自动同步关闭时核对并手动验证，再恢复原有自动同步设置。旧插件文件可保留用于回退，1.2.3 分支不加载这些文件。
+
+## 同步日志分页
+
+后台默认显示每页 20 条，可选择 50 或 100 条，显示筛选后的总条数与页数，并支持首页、上一页、下一页、末页。更换域名筛选、每页数量、刷新或清空后回到第一页。服务端继续只保留最近 500 条日志。
+
+管理员接口 `GET /api/admin/ddns/logs?page=2&page_size=20` 返回 `data.logs`、`data.total`、`data.page`、`data.page_size`、`data.total_pages`。可同时使用 `record`（完整域名）和 `action` 筛选；旧参数 `limit` 作为 `page_size` 的兼容别名。页码和每页数量必须为正整数，每页最多 500 条；超过末页会返回最后一页，空结果返回第 1 页和空数组。计数与结果在同一数据库快照中读取。

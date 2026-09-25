@@ -45,8 +45,14 @@ func RegisterDDNSRoutes(group *gin.RouterGroup, service *ddns.Service) {
 	g.GET("/nodes", func(c *gin.Context) { v, e := service.Nodes(); ddnsRespond(c, v, e) })
 	g.POST("/sync", func(c *gin.Context) { v, e := service.Sync(c.Request.Context()); ddnsRespond(c, v, e) })
 	g.GET("/logs", func(c *gin.Context) {
-		limit, _ := strconv.Atoi(c.Query("limit"))
-		v, e := service.Logs(c.Query("record"), c.Query("action"), limit)
+		page, pageErr := strconv.Atoi(c.DefaultQuery("page", "1"))
+		// Preserve limit for clients using the original first-page API.
+		pageSize, sizeErr := strconv.Atoi(c.DefaultQuery("page_size", c.DefaultQuery("limit", "20")))
+		if pageErr != nil || sizeErr != nil || page < 1 || pageSize < 1 {
+			api.RespondError(c, http.StatusBadRequest, "page 和 page_size 必须为正整数")
+			return
+		}
+		v, e := service.Logs(c.Query("record"), c.Query("action"), page, pageSize)
 		ddnsRespond(c, v, e)
 	})
 	g.DELETE("/logs", func(c *gin.Context) { ddnsRespond(c, nil, service.ClearLogs()) })

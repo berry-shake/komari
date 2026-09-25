@@ -8,27 +8,31 @@ import subprocess
 import sys
 
 
+MINIMUM_VERSION = (1, 2, 4)
+NUMERIC_TAG = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+
+
 def version_key(tag):
-    match = re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-fork\.([1-9]\d*)", tag)
+    match = re.fullmatch(NUMERIC_TAG, tag)
     if not match:
-        raise ValueError(f"Expected a distribution tag such as 1.2.3-fork.1, got {tag!r}")
+        raise ValueError(f"Expected a numeric release tag such as 1.2.4, got {tag!r}")
     return tuple(map(int, match.groups()))
 
 
-def check_releases(tag, base, releases):
+def check_releases(tag, releases):
     key = version_key(tag)
-    if tuple(map(int, base.split('.'))) != key[:3]:
-        raise ValueError(f"This maintenance line is based on {base}")
+    if key < MINIMUM_VERSION:
+        raise ValueError("Independent distribution versions start at 1.2.4")
     for release in releases:
         if release['tag_name'] == tag:
             raise ValueError("Release already exists (including drafts); published assets are immutable")
         if release['draft'] or release['prerelease']:
             continue
-        # Do not publish original upstream releases alongside fork prerelease-style
-        # tags: the Agent's SemVer updater would consider the upstream tag newer.
+        # Legacy tags belong to the old upstream-based numbering scheme. In
+        # particular, Agent 1.2.13-fork.2 must not block our first release 1.2.4.
+        if re.fullmatch(NUMERIC_TAG + r"-fork\.[1-9][0-9]*", release['tag_name']):
+            continue
         previous = version_key(release['tag_name'])
-        if previous[:3] != key[:3]:
-            continue  # Other baselines are retained only for rollback.
         if key <= previous:
             raise ValueError(f"Refusing to replace latest with an older version: {tag}")
 
@@ -37,7 +41,7 @@ def run(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
-def prepare(tag, base, repository):
+def prepare(tag, repository):
     version_key(tag)  # Validate before passing the ref to any external command.
     if os.environ.get('GITHUB_REF') != 'refs/heads/mod':
         raise ValueError('Run this workflow from the mod branch')
@@ -46,7 +50,7 @@ def prepare(tag, base, repository):
     sha = run('git', 'rev-parse', '--verify', f'refs/tags/{tag}^{{commit}}')
     subprocess.run(['git', 'merge-base', '--is-ancestor', sha, 'origin/mod'], check=True)
     pages = json.loads(run('gh', 'api', '--paginate', '--slurp', f'repos/{repository}/releases?per_page=100'))
-    check_releases(tag, base, [release for page in pages for release in page])
+    check_releases(tag, [release for page in pages for release in page])
     if repository.endswith('/komari-web'):
         theme = json.loads(run('git', 'show', f'{sha}:komari-theme.json'))
         if theme['version'] != tag:

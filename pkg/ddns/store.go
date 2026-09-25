@@ -281,29 +281,47 @@ func appendLog(db *gorm.DB, row models.DDNSLog) error {
 }
 
 type LogView struct {
-	Total int64            `json:"total"`
-	Logs  []models.DDNSLog `json:"logs"`
+	Total      int64            `json:"total"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"page_size"`
+	TotalPages int              `json:"total_pages"`
+	Logs       []models.DDNSLog `json:"logs"`
 }
 
-func (s *Service) Logs(name, action string, limit int) (LogView, error) {
-	if limit < 1 {
-		limit = 100
+func (s *Service) Logs(name, action string, page, pageSize int) (LogView, error) {
+	if page < 1 {
+		page = 1
 	}
-	if limit > 1000 {
-		limit = 1000
+	if pageSize < 1 {
+		pageSize = 20
 	}
-	q := s.db.Model(&models.DDNSLog{})
-	if name != "" {
-		q = q.Where("record_name = ?", name)
+	if pageSize > 500 {
+		pageSize = 500
 	}
-	if action != "" {
-		q = q.Where("action = ?", action)
-	}
-	out := LogView{Logs: []models.DDNSLog{}}
-	if err := q.Count(&out.Total).Error; err != nil {
-		return out, err
-	}
-	return out, q.Order("id desc").Limit(limit).Find(&out.Logs).Error
+	out := LogView{Page: page, PageSize: pageSize, TotalPages: 1, Logs: []models.DDNSLog{}}
+	// Count and rows use the same snapshot if a sync trims logs or another
+	// administrator clears them while this page is being read.
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		q := tx.Model(&models.DDNSLog{})
+		if name != "" {
+			q = q.Where("record_name = ?", name)
+		}
+		if action != "" {
+			q = q.Where("action = ?", action)
+		}
+		if err := q.Count(&out.Total).Error; err != nil {
+			return err
+		}
+		if out.Total > 0 {
+			out.TotalPages = int((out.Total-1)/int64(pageSize)) + 1
+		}
+		// Clamp before calculating the offset, including an empty result set.
+		if out.Page > out.TotalPages {
+			out.Page = out.TotalPages
+		}
+		return q.Order("id desc").Offset((out.Page - 1) * pageSize).Limit(pageSize).Find(&out.Logs).Error
+	})
+	return out, err
 }
 func (s *Service) ClearLogs() error {
 	if !s.mu.TryLock() {
