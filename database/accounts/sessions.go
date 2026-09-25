@@ -1,6 +1,8 @@
 package accounts
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net"
@@ -83,13 +85,11 @@ func GetSession(session string) (uuid string, err error) {
 }
 
 func GetUserBySession(session string) (models.User, error) {
-	db := dbcore.GetDBInstance()
-	var sessionRecord models.Session
-	err := db.Where("session = ?", session).First(&sessionRecord).Error
+	uuid, err := GetSession(session)
 	if err != nil {
 		return models.User{}, err
 	}
-	return GetUserByUUID(sessionRecord.UUID)
+	return GetUserByUUID(uuid)
 }
 
 // DeleteSession 删除指定会话
@@ -139,6 +139,30 @@ func RemoveExpiredSessions() error {
 	result := db.Where("expires < ?", time.Now()).Delete(&models.Session{})
 	if result.Error != nil {
 		return result.Error
+	}
+	return nil
+}
+
+// SessionID is a non-authenticating identifier safe to expose in the management UI.
+func SessionID(token string) string {
+	if token == "" {
+		return ""
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+}
+
+func DeleteSessionByID(id string) error {
+	if len(id) != 64 {
+		return errors.New("invalid session identifier")
+	}
+	sessions, err := GetAllSessions()
+	if err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		if subtle.ConstantTimeCompare([]byte(SessionID(session.Session)), []byte(id)) == 1 {
+			return DeleteSession(session.Session)
+		}
 	}
 	return nil
 }

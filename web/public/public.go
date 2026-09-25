@@ -2,6 +2,8 @@ package public
 
 import (
 	"embed"
+	"github.com/komari-monitor/komari/utils"
+	"github.com/komari-monitor/komari/web/security"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -261,42 +263,25 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 			c.Status(http.StatusNotFound)
 			return
 		}
-		//
-		func() {
-			tempKey := c.Query("temp_key")
-			if tempKey == "" {
-				return
+		if tempKey := c.Query("temp_key"); tempKey != "" {
+			expires, _ := config.GetAs[int64]("tempory_share_token_expire_at", 0)
+			expected, _ := config.GetAs[string]("tempory_share_token", "")
+			if security.EqualSecret(tempKey, expected) && expires > time.Now().Unix() {
+				c.SetSameSite(http.SameSiteLaxMode)
+				c.SetCookie("temp_key", tempKey, int(expires-time.Now().Unix()), "/", "", utils.GetScheme(c) == "https", true)
 			}
-
-			tempKeyExpireTime, err := config.GetAs[int64]("tempory_share_token_expire_at", 0)
-			if err != nil {
-				return
+			// Remove the bearer from the address before loading HTML and third-party assets.
+			target := *c.Request.URL
+			if strings.HasPrefix(target.Path, "//") {
+				target.Path = "/" + strings.TrimLeft(target.Path, "/")
+				target.RawPath = ""
 			}
-			allowTempKey, err := config.GetAs[string]("tempory_share_token", "")
-			if err != nil {
-				return
-			}
-
-			if allowTempKey == "" || tempKey != allowTempKey {
-				return
-			}
-			now := time.Now().Unix()
-			if tempKeyExpireTime < now {
-				return
-			}
-			expireSeconds := int(tempKeyExpireTime - now)
-			if expireSeconds > 0 {
-				c.SetCookie(
-					"temp_key",    // key
-					tempKey,       // value
-					expireSeconds, // maxAge（秒）
-					"/",           // path
-					"",            // domain
-					false,         // secure
-					false,         // httpOnly
-				)
-			}
-		}()
+			query := target.Query()
+			query.Del("temp_key")
+			target.RawQuery = query.Encode()
+			c.Redirect(http.StatusSeeOther, target.RequestURI())
+			return
+		}
 		reqPath := c.Request.URL.Path
 		cfg := getConfig()
 		currentTheme := cfg[config.ThemeKey].(string)

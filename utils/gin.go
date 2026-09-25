@@ -9,17 +9,10 @@ func GetScheme(c *gin.Context) string {
 	if c.Request.TLS != nil {
 		return "https"
 	}
-	if scheme := c.Request.Header.Get("X-Forwarded-Proto"); scheme != "" {
-		return scheme
-	}
-	if scheme := c.Request.Header.Get("X-Forwarded-Protocol"); scheme != "" {
-		return scheme
-	}
-	if ssl := c.Request.Header.Get("X-Forwarded-Ssl"); ssl == "on" {
-		return "https"
-	}
-	if scheme := c.Request.Header.Get("X-Url-Scheme"); scheme != "" {
-		return scheme
+	if trustedProxy(c.Request.RemoteAddr) {
+		if scheme := c.Request.Header.Get("X-Forwarded-Proto"); scheme == "https" || scheme == "http" {
+			return scheme
+		}
 	}
 	return "http"
 }

@@ -186,7 +186,7 @@ func hasTempAccess(c *gin.Context) bool {
 	if err != nil {
 		return false
 	}
-	if allowKey == "" || tempKey != allowKey {
+	if allowKey == "" || !security.EqualSecret(tempKey, allowKey) {
 		return false
 	}
 	return expireAt >= time.Now().Unix()
@@ -289,5 +289,5 @@ func isApiKeyValid(apiKey string) bool {
 	if apiKeyConfig == "" || len(apiKeyConfig) < 12 {
 		return false
 	}
-	return apiKey == "Bearer "+apiKeyConfig
+	return security.EqualSecret(apiKey, "Bearer "+apiKeyConfig)
 }

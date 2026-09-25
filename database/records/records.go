@@ -1,6 +1,7 @@
 package records
 
 import (
+	"github.com/komari-monitor/komari/database/queryguard"
 	"log"
 	"sort"
 	"strings"
@@ -39,7 +40,12 @@ func DeleteAll() error {
 
 // GetGPURecordsByClientAndTime 获取GPU记录数据
 func GetGPURecordsByClientAndTime(uuid string, start, end time.Time) ([]models.GPURecord, error) {
-	db := dbcore.GetDBInstance()
+	if !queryguard.ValidRange(start, end) {
+		return nil, queryguard.ErrTooLarge
+	}
+	ctx, cancel := queryguard.Context()
+	defer cancel()
+	db := dbcore.GetDBInstance().WithContext(ctx)
 	var records []models.GPURecord
 
 	fourHoursAgo := time.Now().Add(-4*time.Hour - time.Minute)
@@ -51,7 +57,7 @@ func GetGPURecordsByClientAndTime(uuid string, start, end time.Time) ([]models.G
 			recentStart = fourHoursAgo
 		}
 		err := db.Where("client = ? AND time >= ? AND time <= ?", uuid, recentStart, end).
-			Order("time ASC, device_index ASC").Find(&recentRecords).Error
+			Order("time ASC, device_index ASC").Limit(queryguard.MaxRows + 1).Find(&recentRecords).Error
 		if err != nil {
 			log.Printf("Error fetching recent GPU records for client %s between %s and %s: %v", uuid, recentStart, end, err)
 			return nil, err
@@ -60,10 +66,14 @@ func GetGPURecordsByClientAndTime(uuid string, start, end time.Time) ([]models.G
 
 	var longTermRecords []models.GPURecord
 	err := db.Table("gpu_records_long_term").Where("client = ? AND time >= ? AND time <= ?", uuid, start, end).
-		Order("time ASC, device_index ASC").Find(&longTermRecords).Error
+		Order("time ASC, device_index ASC").Limit(queryguard.MaxRows + 1).Find(&longTermRecords).Error
 	if err != nil {
 		log.Printf("Error fetching long-term GPU records for client %s between %s and %s: %v", uuid, start, end, err)
-		return recentRecords, nil
+		return nil, err
+	}
+
+	if len(recentRecords)+len(longTermRecords) > queryguard.MaxRows {
+		return nil, queryguard.ErrTooLarge
 	}
 
 	// 合并结果 - 不再需要类型转换
@@ -88,7 +98,12 @@ func DeleteRecordBefore(before time.Time) error {
 }
 
 func GetRecordsByClientAndTime(uuid string, start, end time.Time) ([]models.Record, error) {
-	db := dbcore.GetDBInstance()
+	if !queryguard.ValidRange(start, end) {
+		return nil, queryguard.ErrTooLarge
+	}
+	ctx, cancel := queryguard.Context()
+	defer cancel()
+	db := dbcore.GetDBInstance().WithContext(ctx)
 	var records []models.Record
 
 	fourHoursAgo := time.Now().Add(-4*time.Hour - time.Minute)
@@ -99,7 +114,7 @@ func GetRecordsByClientAndTime(uuid string, start, end time.Time) ([]models.Reco
 		if recentStart.Before(fourHoursAgo) {
 			recentStart = fourHoursAgo
 		}
-		err := db.Where("client = ? AND time >= ? AND time <= ?", uuid, recentStart, end).Order("time ASC").Find(&recentRecords).Error
+		err := db.Where("client = ? AND time >= ? AND time <= ?", uuid, recentStart, end).Order("time ASC").Limit(queryguard.MaxRows + 1).Find(&recentRecords).Error
 		if err != nil {
 			log.Printf("Error fetching recent records for client %s between %s and %s: %v", uuid, recentStart, end, err)
 			return nil, err
@@ -107,12 +122,15 @@ func GetRecordsByClientAndTime(uuid string, start, end time.Time) ([]models.Reco
 	}
 
 	var long_term []models.Record
-	err := db.Table("records_long_term").Where("client = ? AND time >= ? AND time <= ?", uuid, start, end).Order("time ASC").Find(&long_term).Error
+	err := db.Table("records_long_term").Where("client = ? AND time >= ? AND time <= ?", uuid, start, end).Order("time ASC").Limit(queryguard.MaxRows + 1).Find(&long_term).Error
 	if err != nil {
 		log.Printf("Error fetching long-term records for client %s between %s and %s: %v", uuid, start, end, err)
-		return recentRecords, nil
+		return nil, err
 	}
 
+	if len(recentRecords)+len(long_term) > queryguard.MaxRows {
+		return nil, queryguard.ErrTooLarge
+	}
 	if len(long_term) == 0 {
 		// 没有查到long_term，返回全部recentRecords
 		records = append(records, recentRecords...)

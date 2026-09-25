@@ -2,7 +2,7 @@ package generic
 
 import (
 	"github.com/komari-monitor/komari/web/oauth/factory"
-	"github.com/patrickmn/go-cache"
+	"github.com/komari-monitor/komari/web/security"
 )
 
 func init() {
@@ -13,7 +13,7 @@ func init() {
 
 type Generic struct {
 	Addition
-	stateCache *cache.Cache // 用于存储state和用户信息的映射
+	stateCache security.StateStore // 用于存储state和用户信息的映射
 }
 
 type Addition struct {

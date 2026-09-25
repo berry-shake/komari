@@ -2,7 +2,6 @@ package public
 
 import (
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,7 +35,7 @@ func OAuth(c *gin.Context) {
 		return
 	}
 
-	c.SetCookie("oauth_state", state, 3600, "/", "", false, true)
+	c.SetCookie("oauth_state", state, 3600, "/", "", utils.GetScheme(c) == "https", true)
 
 	c.Redirect(302, authURL)
 }
@@ -46,25 +45,11 @@ func OAuthCallback(c *gin.Context) {
 
 	// 验证state防止CSRF攻击
 	state, _ := c.Cookie("oauth_state")
-	c.SetCookie("oauth_state", "", -1, "/", "", false, true)
+	c.SetCookie("oauth_state", "", -1, "/", "", utils.GetScheme(c) == "https", true)
 
-	// 获取当前OAuth提供商名称
-	providerName := oauth.CurrentProvider().GetName()
-
-	providersSkipStateCheck := []string{"qq"}
-	if slices.Contains(providersSkipStateCheck, providerName) {
-		// 对于QQ登录，由于是通过QQ聚合登录平台中转，state可能会不匹配
-		// 但我们仍然需要验证state的存在性（不能是空的）
-		if state == "" {
-			c.JSON(400, gin.H{"status": "error", "error": "Invalid state"})
-			return
-		}
-	} else {
-		// 对于其他提供商，严格验证state匹配
-		if state == "" || state != c.Query("state") {
-			c.JSON(400, gin.H{"status": "error", "error": "Invalid state"})
-			return
-		}
+	if !security.EqualSecret(state, c.Query("state")) {
+		c.JSON(400, gin.H{"status": "error", "error": "Invalid state"})
+		return
 	}
 
 	queries := make(map[string]string)
@@ -85,7 +70,7 @@ func OAuthCallback(c *gin.Context) {
 	// 如果cookie中有binding_external_account，说明是绑定外部账号
 	// 否则是登录
 	uuid, _ := c.Cookie("binding_external_account")
-	c.SetCookie("binding_external_account", "", -1, "/", "", false, true)
+	c.SetCookie("binding_external_account", "", -1, "/", "", utils.GetScheme(c) == "https", true)
 	if uuid != "" {
 		// 绑定外部账号
 		session, _ := c.Cookie("session_token")

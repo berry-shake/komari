@@ -123,15 +123,10 @@ func UploadReport(c *gin.Context) {
 	}
 	report.UpdatedAt = time.Now()
 
-	// 优先使用 body 中的 UUID，若为空则从中间件注入的上下文中获取
-	uuid := report.UUID
-	if uuid == "" {
-		if v, ok := c.Get("client_uuid"); ok {
-			uuid, _ = v.(string)
-		}
-	}
-	if uuid == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "UUID is required"})
+	// The authenticated node owns every report, including the legacy POST route.
+	uuid := c.GetString("client_uuid")
+	if uuid == "" || (report.UUID != "" && report.UUID != uuid) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Report identity does not match authenticated client"})
 		return
 	}
 	report.UUID = uuid

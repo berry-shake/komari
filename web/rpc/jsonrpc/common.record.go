@@ -3,6 +3,7 @@ package jsonrpc
 import (
 	"context"
 	"fmt"
+	"github.com/komari-monitor/komari/database/queryguard"
 	"math"
 	"sort"
 	"time"
@@ -20,6 +21,10 @@ func init() {
 }
 
 func getRecords(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	if !queryguard.Acquire() {
+		return nil, rpc.MakeError(rpc.InternalError, "Too many concurrent history queries", nil)
+	}
+	defer queryguard.Release()
 	meta := rpc.MetaFromContext(ctx)
 	var params struct {
 		Type     string `json:"type"`      // "load" | "ping"; default "load"
@@ -31,7 +36,12 @@ func getRecords(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpc
 		TaskID   int    `json:"task_id"`   // for type=ping: optional task id; -1 or omitted means all
 		MaxCount int    `json:"maxCount"`  // max number of points; -1 unlimited; default 4000
 	}
-	req.BindParams(&params)
+	if err := req.BindParams(&params); err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid parameters", nil)
+	}
+	if params.Hours < 0 || params.Hours > queryguard.MaxHours || params.MaxCount < -1 || params.MaxCount > queryguard.MaxRows {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Query exceeds history limits", nil)
+	}
 
 	// defaults
 	if params.Type == "" {
@@ -69,8 +79,11 @@ func getRecords(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpc
 		startTime = endTime.Add(-time.Duration(hours) * time.Hour)
 	}
 
+	if !queryguard.ValidRange(startTime, endTime) {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Time range must be between 0 and 366 days", nil)
+	}
 	// Hidden filtering for non-admin
-	isAdmin := meta.Permission == "admin"
+	isAdmin := meta != nil && meta.Permission == "admin"
 	hidden := map[string]bool{}
 	if !isAdmin {
 		cinfo, err := clients.GetAllClientBasicInfo()
@@ -510,7 +523,9 @@ func getLoadRecordsCombined(uuid string, start, end time.Time) ([]models.Record,
 	if uuid != "" {
 		return recordsdb.GetRecordsByClientAndTime(uuid, start, end)
 	}
-	db := dbcore.GetDBInstance()
+	ctx, cancel := queryguard.Context()
+	defer cancel()
+	db := dbcore.GetDBInstance().WithContext(ctx)
 	fourHoursAgo := time.Now().Add(-4*time.Hour - time.Minute)
 
 	var recent []models.Record
@@ -519,12 +534,19 @@ func getLoadRecordsCombined(uuid string, start, end time.Time) ([]models.Record,
 		if recentStart.Before(fourHoursAgo) {
 			recentStart = fourHoursAgo
 		}
-		_ = db.Table("records").Where("time >= ? AND time <= ?", recentStart, end).Order("time ASC").Find(&recent).Error
+		if err := db.Table("records").Where("time >= ? AND time <= ?", recentStart, end).Order("time ASC").Limit(queryguard.MaxRows + 1).Find(&recent).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	var longTerm []models.Record
-	_ = db.Table("records_long_term").Where("time >= ? AND time <= ?", start, end).Order("time ASC").Find(&longTerm).Error
+	if err := db.Table("records_long_term").Where("time >= ? AND time <= ?", start, end).Order("time ASC").Limit(queryguard.MaxRows + 1).Find(&longTerm).Error; err != nil {
+		return nil, err
+	}
 
+	if len(recent)+len(longTerm) > queryguard.MaxRows {
+		return nil, queryguard.ErrTooLarge
+	}
 	// if no long term, return all recent
 	if len(longTerm) == 0 {
 		return recent, nil

@@ -1,42 +1,48 @@
 package terminal
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/web/api"
+	"net/http"
 )
 
 func EstablishConnection(c *gin.Context) {
-	session_id := c.Query("id")
-	session, exists := TerminalSessions[session_id]
-	if !exists || session == nil || session.Browser == nil {
-		c.JSON(404, gin.H{"status": "error", "error": "Session not found"})
+	id := c.Query("id")
+	session := lookupSession(id)
+	if session == nil || session.Browser == nil {
+		c.JSON(404, gin.H{"error": "Session not found"})
 		return
 	}
-	// Upgrade the connection to WebSocket
+	if c.GetString("client_uuid") == "" || c.GetString("client_uuid") != session.UUID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Terminal identity mismatch"})
+		return
+	}
 	if !api.IsWebSocketUpgrade(c) {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "Require WebSocket upgrade"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Require WebSocket upgrade"})
 		return
 	}
+	session.mu.Lock()
+	if session.closed || session.connecting || session.Agent != nil {
+		session.mu.Unlock()
+		c.JSON(http.StatusConflict, gin.H{"error": "Session already connected or closed"})
+		return
+	}
+	session.connecting = true
+	session.mu.Unlock()
 	conn, err := api.UpgradeWebSocket(c)
+	session.mu.Lock()
+	session.connecting = false
 	if err != nil {
-		TerminalSessionsMutex.Lock()
-		if session.Browser != nil {
-			session.Browser.Close()
-		}
-		delete(TerminalSessions, session_id)
-		TerminalSessionsMutex.Unlock()
+		session.mu.Unlock()
 		return
 	}
+	if session.closed {
+		session.mu.Unlock()
+		conn.Close()
+		return
+	}
+	conn.SetReadLimit(1 << 20)
 	session.Agent = conn
-	conn.SetCloseHandler(func(code int, text string) error {
-		delete(TerminalSessions, session_id)
-		// 通知 Browser 关闭终端连接
-		if session.Browser != nil {
-			session.Browser.Close()
-		}
-		return nil
-	})
-	go ForwardTerminal(session_id)
+	session.mu.Unlock()
+	go ForwardTerminal(id)
 }

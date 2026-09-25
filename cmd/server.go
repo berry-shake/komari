@@ -92,8 +92,12 @@ func RunServer() {
 	})
 
 	r := gin.New()
+	if err := r.SetTrustedProxies(utils.TrustedProxies()); err != nil {
+		log.Fatalf("Invalid trusted proxies: %v", err)
+	}
 	r.Use(logutil.GinLogger())
 	r.Use(logutil.GinRecovery())
+	r.Use(security.Headers())
 
 	config.Subscribe(func(event config.ConfigEvent) {
 		if event.IsChanged(config.GeoIpProviderKey) {

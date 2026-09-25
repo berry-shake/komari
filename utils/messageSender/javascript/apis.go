@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/komari-monitor/komari/web/security"
 )
 
 // createFetchFunction 创建一个 fetch API 实现
@@ -53,13 +54,18 @@ func (j *JavaScriptSender) createFetchFunction() func(goja.FunctionCall) goja.Va
 		// 创建 Promise
 		promise, resolve, reject := j.vm.NewPromise()
 
-		go func() {
+		func() {
 			defer func() {
 				if r := recover(); r != nil {
 					reject(j.vm.ToValue(fmt.Sprintf("fetch panic: %v", r)))
 				}
 			}()
 
+			if j.operations >= 256 {
+				reject(j.vm.ToValue("operation quota exceeded"))
+				return
+			}
+			j.operations++
 			// 创建 HTTP 请求
 			method := options["method"].(string)
 			var body io.Reader
@@ -67,7 +73,7 @@ func (j *JavaScriptSender) createFetchFunction() func(goja.FunctionCall) goja.Va
 				body = strings.NewReader(options["body"].(string))
 			}
 
-			req, err := http.NewRequest(method, url, body)
+			req, err := http.NewRequestWithContext(j.ctx, method, url, body)
 			if err != nil {
 				reject(j.vm.ToValue(fmt.Sprintf("Failed to create request: %v", err)))
 				return
@@ -91,7 +97,7 @@ func (j *JavaScriptSender) createFetchFunction() func(goja.FunctionCall) goja.Va
 			defer resp.Body.Close()
 
 			// 读取响应体
-			bodyBytes, err := io.ReadAll(resp.Body)
+			bodyBytes, err := security.ReadBounded(resp.Body, 4<<20)
 			if err != nil {
 				reject(j.vm.ToValue(fmt.Sprintf("Failed to read response: %v", err)))
 				return
@@ -147,7 +153,6 @@ func (j *JavaScriptSender) createXHRConstructor() func(goja.ConstructorCall) *go
 		var method, url string
 		var headers = make(map[string]string)
 		var requestBody string
-		var async = true
 
 		// readyState
 		xhr.Set("readyState", 0)
@@ -168,9 +173,6 @@ func (j *JavaScriptSender) createXHRConstructor() func(goja.ConstructorCall) *go
 			}
 			method = call.Argument(0).String()
 			url = call.Argument(1).String()
-			if len(call.Arguments) > 2 {
-				async = call.Argument(2).ToBoolean()
-			}
 			xhr.Set("readyState", 1)
 			j.callHandler(xhr, "onreadystatechange")
 			return goja.Undefined()
@@ -204,13 +206,17 @@ func (j *JavaScriptSender) createXHRConstructor() func(goja.ConstructorCall) *go
 					}
 				}()
 
+				if j.operations >= 256 {
+					panic("operation quota exceeded")
+				}
+				j.operations++
 				// 创建请求
 				var body io.Reader
 				if requestBody != "" {
 					body = bytes.NewReader([]byte(requestBody))
 				}
 
-				req, err := http.NewRequest(method, url, body)
+				req, err := http.NewRequestWithContext(j.ctx, method, url, body)
 				if err != nil {
 					xhr.Set("readyState", 4)
 					xhr.Set("status", 0)
@@ -247,7 +253,7 @@ func (j *JavaScriptSender) createXHRConstructor() func(goja.ConstructorCall) *go
 				xhr.Set("readyState", 3)
 				j.callHandler(xhr, "onreadystatechange")
 
-				bodyBytes, err := io.ReadAll(resp.Body)
+				bodyBytes, err := security.ReadBounded(resp.Body, 4<<20)
 				if err != nil {
 					xhr.Set("readyState", 4)
 					xhr.Set("status", resp.StatusCode)
@@ -267,11 +273,7 @@ func (j *JavaScriptSender) createXHRConstructor() func(goja.ConstructorCall) *go
 				j.callHandler(xhr, "onload")
 			}
 
-			if async {
-				go sendFunc()
-			} else {
-				sendFunc()
-			}
+			sendFunc()
 
 			return goja.Undefined()
 		})

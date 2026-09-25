@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"io"
 	"os"
+	"strings"
 
 	"github.com/komari-monitor/komari/cmd/flags"
 	"github.com/komari-monitor/komari/database/accounts"
@@ -12,7 +14,8 @@ import (
 
 var (
 	//Username    string
-	NewPassword string
+	NewPassword   string
+	passwordStdin bool
 )
 
 var ChpasswdCmd = &cobra.Command{
@@ -21,6 +24,14 @@ var ChpasswdCmd = &cobra.Command{
 	Long:    `Force change password`,
 	Example: `komari chpasswd -p <password>`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if passwordStdin {
+			data, err := io.ReadAll(io.LimitReader(cmd.InOrStdin(), 4097))
+			if err != nil || len(data) > 4096 {
+				cmd.Println("Unable to read password (maximum 4096 bytes)")
+				return
+			}
+			NewPassword = strings.TrimRight(string(data), "\r\n")
+		}
 		if NewPassword == "" {
 			cmd.Help()
 			return
@@ -36,7 +47,8 @@ var ChpasswdCmd = &cobra.Command{
 			cmd.Println("Error:", err)
 			return
 		}
-		cmd.Println("Password changed successfully, new password:", NewPassword)
+		cmd.Println("Password changed successfully.")
+		NewPassword = ""
 
 		if err := accounts.DeleteAllSessions(); err != nil {
 			cmd.Println("Unable to force logout of other devices:", err)
@@ -50,5 +62,7 @@ var ChpasswdCmd = &cobra.Command{
 func init() {
 	//ChpasswdCmd.PersistentFlags().StringVarP(&Username, "user", "u", "admin", "The username of the account to change password")
 	ChpasswdCmd.PersistentFlags().StringVarP(&NewPassword, "password", "p", "", "New password")
+	ChpasswdCmd.PersistentFlags().BoolVar(&passwordStdin, "password-stdin", false, "Read new password from standard input")
+	ChpasswdCmd.MarkFlagsMutuallyExclusive("password", "password-stdin")
 	RootCmd.AddCommand(ChpasswdCmd)
 }

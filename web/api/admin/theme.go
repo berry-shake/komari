@@ -7,13 +7,11 @@ import (
 	"fmt"
 	"github.com/komari-monitor/komari/web/security"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/database/dbcore"
@@ -316,25 +314,6 @@ func isValidThemeShort(short string) bool {
 	return true
 }
 
-// downloadThemeFromURL 从URL下载主题文件
-// isPrivateIP checks if the resolved IP addresses are private/internal
-func isPrivateIP(host string) bool {
-	ips, err := net.LookupHost(host)
-	if err != nil {
-		return true // fail closed
-	}
-	for _, ipStr := range ips {
-		ip := net.ParseIP(ipStr)
-		if ip == nil {
-			continue
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return true
-		}
-	}
-	return false
-}
-
 func downloadThemeFromURL(rawURL string) ([]byte, error) {
 	// SSRF protection: block requests to private/internal IPs
 	parsedURL, err := url.Parse(rawURL)
@@ -344,12 +323,12 @@ func downloadThemeFromURL(rawURL string) ([]byte, error) {
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
 		return nil, fmt.Errorf("only http and https schemes are allowed")
 	}
-	if isPrivateIP(parsedURL.Hostname()) {
+	if parsedURL.User != nil || parsedURL.Hostname() == "" {
 		return nil, fmt.Errorf("requests to private/internal addresses are not allowed")
 	}
 
 	// 发送HTTP GET请求
-	resp, err := (&http.Client{Timeout: 60 * time.Second}).Get(rawURL)
+	resp, err := security.PublicHTTPClient().Get(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("下载主题文件失败: %v", err)
 	}

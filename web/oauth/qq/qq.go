@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/utils"
 	"github.com/komari-monitor/komari/web/oauth/factory"
-	"github.com/patrickmn/go-cache"
 )
 
 func (q *QQ) GetName() string {
@@ -23,7 +22,15 @@ func (q *QQ) GetConfiguration() factory.Configuration {
 }
 
 func (q *QQ) GetAuthorizationURL(redirectURI string) (string, string) {
-	state := utils.GenerateRandomString(16)
+	state := utils.GenerateRandomString(32)
+	callback, err := url.Parse(redirectURI)
+	if err != nil {
+		return "", ""
+	}
+	params := callback.Query()
+	params.Set("state", state)
+	callback.RawQuery = params.Encode()
+	redirectURI = callback.String()
 
 	// 构建请求QQ聚合登录平台的URL
 	requestURL := fmt.Sprintf(
@@ -36,7 +43,7 @@ func (q *QQ) GetAuthorizationURL(redirectURI string) (string, string) {
 	)
 
 	// 向聚合登录平台发送请求
-	resp, err := http.Get(requestURL)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Get(requestURL)
 	if err != nil {
 		// 如果请求失败，返回错误信息
 		return "", state
@@ -44,7 +51,7 @@ func (q *QQ) GetAuthorizationURL(redirectURI string) (string, string) {
 	defer resp.Body.Close()
 
 	// 读取响应内容
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", state
 	}
@@ -65,7 +72,9 @@ func (q *QQ) GetAuthorizationURL(redirectURI string) (string, string) {
 		return "", state
 	}
 
-	q.stateCache.Set(state, true, cache.DefaultExpiration)
+	if !q.stateCache.Put(state, "", 5*time.Minute) {
+		return "", ""
+	}
 	return result.URL, state
 }
 
@@ -83,14 +92,8 @@ func (q *QQ) OnCallback(ctx *gin.Context, state string, query map[string]string,
 	}
 
 	// 验证state防止CSRF攻击
-	if q.stateCache == nil {
-		return factory.OidcCallback{}, fmt.Errorf("state cache not initialized")
-	}
-	if _, ok := q.stateCache.Get(state); !ok {
-		return factory.OidcCallback{}, fmt.Errorf("invalid state")
-	}
-	if state == "" {
-		return factory.OidcCallback{}, fmt.Errorf("invalid state")
+	if _, ok := q.stateCache.Take(state); !ok {
+		return factory.OidcCallback{}, fmt.Errorf("invalid or expired state")
 	}
 
 	// 检查是否提供了Authorization Code
@@ -109,7 +112,7 @@ func (q *QQ) OnCallback(ctx *gin.Context, state string, query map[string]string,
 		url.QueryEscape(code),
 	)
 
-	resp, err := http.Get(callbackURL)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Get(callbackURL)
 	if err != nil {
 		return factory.OidcCallback{}, fmt.Errorf("failed to get user info: %v", err)
 	}
@@ -121,7 +124,7 @@ func (q *QQ) OnCallback(ctx *gin.Context, state string, query map[string]string,
 	}
 
 	// 读取响应
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return factory.OidcCallback{}, fmt.Errorf("failed to read response: %v", err)
 	}
@@ -141,7 +144,7 @@ func (q *QQ) OnCallback(ctx *gin.Context, state string, query map[string]string,
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
-		return factory.OidcCallback{}, fmt.Errorf("failed to parse callback response: %v, response body: %s", err, string(body))
+		return factory.OidcCallback{}, fmt.Errorf("failed to parse callback response: %v", err)
 	}
 
 	// 检查返回状态码
@@ -151,7 +154,7 @@ func (q *QQ) OnCallback(ctx *gin.Context, state string, query map[string]string,
 
 	// 检查是否返回了用户唯一标识
 	if result.SocialUid == "" {
-		return factory.OidcCallback{}, fmt.Errorf("empty social_uid returned, full response: %s", string(body))
+		return factory.OidcCallback{}, fmt.Errorf("empty social_uid returned")
 	}
 
 	// 返回用户唯一标识
@@ -159,12 +162,12 @@ func (q *QQ) OnCallback(ctx *gin.Context, state string, query map[string]string,
 }
 
 func (q *QQ) Init() error {
-	q.stateCache = cache.New(time.Minute*5, time.Minute*10)
+	q.stateCache.Clear()
 	return nil
 }
 
 func (q *QQ) Destroy() error {
-	q.stateCache.Flush()
+	q.stateCache.Clear()
 	return nil
 }
 

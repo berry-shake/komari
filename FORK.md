@@ -8,9 +8,9 @@
 
 | 仓库 | 上游代码基线 | 当前发行版本 |
 | --- | --- | --- |
-| komari | 1.2.3 (`618ced3b8f0abd53d0e9ec1db0d90a948d2d221a`) | 1.2.5 |
-| komari-web | 1.2.3 (`296fe766fab39c2ad7a4a3dd8caf3dcfebae3222`) | 1.2.5 |
-| komari-agent | 1.2.13 | 1.2.4 |
+| komari | 1.2.3 (`618ced3b8f0abd53d0e9ec1db0d90a948d2d221a`) | 1.2.7 |
+| komari-web | 1.2.3 (`296fe766fab39c2ad7a4a3dd8caf3dcfebae3222`) | 1.2.7 |
+| komari-agent | 1.2.13 | 1.2.7 |
 
 服务端继续使用 1.2.3 的单 SQLite 设计，不引入新指标存储模块，不创建 metrics.db，不连接 PostgreSQL。节点 UUID/Token、延迟任务、GitHub OAuth、账号绑定和主题配置保持兼容。WAL/SHM 是同一 SQLite 数据库的活动文件。
 
@@ -58,3 +58,7 @@ gh -R berry-shake/REPOSITORY workflow run release.yml --ref mod -f tag=1.2.4
 ## 本地验证
 
 使用 go.mod 声明的 Go 工具链、Node.js 24、Python 3.11+、C 编译器。前端 npm ci/test/build；服务端 scripts/build-frontend.sh、Python 脚本测试、go test -short ./... 和 DDNS/API race 测试；Agent 执行 Go/Python 测试、更新逻辑 race 测试及发布矩阵构建。正式 Linux amd64/arm64 镜像需验证 Agent 上报、延迟检测、单库持久化和日志分页后交付。未注入版本的开发构建显示 dev。
+
+## 1.2.7 安全修复
+
+三个项目版本统一为 1.2.7，继续纯数字递增。修复内容、兼容性变化与未覆盖的设计风险见 [安全修复说明](docs/SECURITY-1.2.7.md)。

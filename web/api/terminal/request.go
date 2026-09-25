@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"log"
 	"net/http"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 
 func RequestTerminal(c *gin.Context) {
 	uuid := c.Param("uuid")
-	user_uuid, _ := c.Get("uuid")
+	user_uuid := c.GetString("uuid")
 	_, err := clients.GetClientByUUID(uuid)
 	if err != nil {
 		c.JSON(400, gin.H{
@@ -35,7 +34,7 @@ func RequestTerminal(c *gin.Context) {
 	// 新建一个终端连接
 	id := utils.GenerateRandomString(32)
 	session := &TerminalSession{
-		UserUUID:    user_uuid.(string),
+		UserUUID:    user_uuid,
 		UUID:        uuid,
 		Browser:     conn,
 		Agent:       nil,
@@ -45,50 +44,29 @@ func RequestTerminal(c *gin.Context) {
 	TerminalSessionsMutex.Lock()
 	TerminalSessions[id] = session
 	TerminalSessionsMutex.Unlock()
-	conn.SetCloseHandler(func(code int, text string) error {
-		log.Println("Terminal connection closed:", code, text)
-		TerminalSessionsMutex.Lock()
-		delete(TerminalSessions, id)
-		TerminalSessionsMutex.Unlock()
-		// 通知 Agent 关闭终端连接
-		if session.Agent != nil {
-			session.Agent.Close()
-		}
-		return nil
-	})
-
-	if agent_runtime.GetConnectedClients()[uuid] == nil {
-		conn.WriteMessage(1, []byte("Client offline!\n被控端离线!\n"))
-		conn.Close()
-		TerminalSessionsMutex.Lock()
-		delete(TerminalSessions, id)
-		TerminalSessionsMutex.Unlock()
+	conn.SetReadLimit(1 << 20)
+	control := agent_runtime.GetConnectedClients()[uuid]
+	if control == nil {
+		session.writeBrowser(1, []byte("Client offline!\n被控端离线!\n"))
+		session.close(id)
 		return
 	}
-	err = agent_runtime.GetConnectedClients()[uuid].WriteJSON(gin.H{
-		"message":    "terminal",
-		"request_id": id,
-	})
-	if err != nil {
-		conn.Close()
-		TerminalSessionsMutex.Lock()
-		delete(TerminalSessions, id)
-		TerminalSessionsMutex.Unlock()
+	session.writeBrowser(1, []byte("等待被控端连接 waiting for agent...\n"))
+	if err := control.WriteJSON(gin.H{"message": "terminal", "request_id": id}); err != nil {
+		session.close(id)
 		return
 	}
-	conn.WriteMessage(1, []byte("等待被控端连接 waiting for agent...\n"))
-	// 如果没有连接上，则关闭连接
 	time.AfterFunc(30*time.Second, func() {
-		TerminalSessionsMutex.Lock()
-		if session.Agent == nil {
-			if session.Browser != nil {
-				session.Browser.WriteMessage(1, []byte("被控端连接超时 timeout\n"))
-				session.Browser.Close()
-			}
-			conn.Close()
-			delete(TerminalSessions, id)
+		session.mu.Lock()
+		pending := session.Agent == nil && !session.closed
+		if pending {
+			session.closed = true
 		}
-		TerminalSessionsMutex.Unlock()
+		session.mu.Unlock()
+		if pending {
+			session.writeBrowser(1, []byte("被控端连接超时 timeout\n"))
+			session.close(id)
+		}
 	})
-	//auditlog.Log(c.ClientIP(), user_uuid.(string), "request, terminal id:"+id+",client:"+session.UUID, "terminal")
+	//auditlog.Log(c.ClientIP(), user_uuid, "request, terminal id:"+id+",client:"+session.UUID, "terminal")
 }

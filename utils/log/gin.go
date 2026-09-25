@@ -69,7 +69,7 @@ func redactQuery(raw string) string {
 	}
 	for key := range query {
 		name := strings.ToLower(key)
-		if strings.Contains(name, "token") || strings.Contains(name, "secret") || strings.Contains(name, "password") || name == "authorization" || name == "key" || name == "api_key" || name == "code" || name == "state" || name == "2fa_code" {
+		if strings.Contains(name, "token") || strings.Contains(name, "secret") || strings.Contains(name, "password") || name == "authorization" || name == "key" || name == "api_key" || name == "code" || name == "state" || name == "2fa_code" || name == "ticket" || name == "temp_key" {
 			query.Set(key, "[REDACTED]")
 		}
 	}

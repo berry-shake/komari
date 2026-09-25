@@ -59,7 +59,7 @@ func IsAPIKeyRequest(r *http.Request) bool {
 	if err != nil || apiKeyConfig == "" || len(apiKeyConfig) < 12 {
 		return false
 	}
-	return r.Header.Get("Authorization") == "Bearer "+apiKeyConfig
+	return EqualSecret(r.Header.Get("Authorization"), "Bearer "+apiKeyConfig)
 }
 
 func IsAuthorizationPreflight(r *http.Request) bool {

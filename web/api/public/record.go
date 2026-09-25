@@ -1,6 +1,7 @@
 package public
 
 import (
+	"github.com/komari-monitor/komari/database/queryguard"
 	"strconv"
 	"time"
 
@@ -14,6 +15,11 @@ import (
 )
 
 func GetRecordsByUUID(c *gin.Context) {
+	if !queryguard.Acquire() {
+		api.RespondError(c, 429, "Too many concurrent history queries")
+		return
+	}
+	defer queryguard.Release()
 	uuid := c.Query("uuid")
 	loadType := c.Query("load_type")
 
@@ -51,8 +57,8 @@ func GetRecordsByUUID(c *gin.Context) {
 	}
 
 	hoursInt, err := strconv.Atoi(hours)
-	if err != nil {
-		api.RespondError(c, 400, "Invalid hours parameter")
+	if err != nil || hoursInt < 1 || hoursInt > queryguard.MaxHours {
+		api.RespondError(c, 400, "hours must be between 1 and 8784")
 		return
 	}
 
@@ -68,7 +74,9 @@ func GetRecordsByUUID(c *gin.Context) {
 		return
 	}
 
-	clientRecords, err := records.GetRecordsByClientAndTime(uuid, time.Now().Add(-time.Duration(hoursInt)*time.Hour), time.Now())
+	endTime := time.Now()
+	startTime := endTime.Add(-time.Duration(hoursInt) * time.Hour)
+	clientRecords, err := records.GetRecordsByClientAndTime(uuid, startTime, endTime)
 	if err != nil {
 		api.RespondError(c, 500, "Failed to fetch records: "+err.Error())
 		return
@@ -92,7 +100,7 @@ func GetRecordsByUUID(c *gin.Context) {
 
 	// 自动检测是否有GPU数据并附加到响应中
 	if loadType == "" || loadType == "all" || loadType == "gpu" {
-		gpuRecords, err := records.GetGPURecordsByClientAndTime(uuid, time.Now().Add(-time.Duration(hoursInt)*time.Hour), time.Now())
+		gpuRecords, err := records.GetGPURecordsByClientAndTime(uuid, startTime, endTime)
 		if err == nil && len(gpuRecords) > 0 {
 			// 按设备索引分组数据，构建简化的设备结构
 			gpuDevices := make(map[string]interface{})
@@ -189,6 +197,11 @@ func filterRecordsByLoadType(records []models.Record, loadType string) []gin.H {
 // 2. 仅 task_id - 获取该任务的所有客户端记录
 // 3. uuid + task_id - 获取特定客户端在特定任务的记录
 func GetPingRecords(c *gin.Context) {
+	if !queryguard.Acquire() {
+		api.RespondError(c, 429, "Too many concurrent history queries")
+		return
+	}
+	defer queryguard.Release()
 	uuid := c.Query("uuid")
 	taskIdStr := c.Query("task_id")
 
@@ -254,8 +267,9 @@ func GetPingRecords(c *gin.Context) {
 	}
 
 	hoursInt, err := strconv.Atoi(hours)
-	if err != nil {
-		hoursInt = 4
+	if err != nil || hoursInt < 1 || hoursInt > queryguard.MaxHours {
+		api.RespondError(c, 400, "hours must be between 1 and 8784")
+		return
 	}
 
 	endTime := time.Now()

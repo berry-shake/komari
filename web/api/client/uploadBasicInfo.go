@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"github.com/komari-monitor/komari/web/api"
 	"net"
 
@@ -24,7 +25,17 @@ func getClientIPType(ip net.IP) int {
 }
 
 func saveClientBasicInfo(info map[string]interface{}, uuid string, fallbackIP string) error {
-	info["uuid"] = uuid
+	// Never pass Agent-controlled management fields to GORM Updates.
+	allowed := map[string]interface{}{"uuid": uuid}
+	for _, key := range []string{"cpu_name", "virtualization", "arch", "cpu_cores", "cpu_physical_cores", "os", "kernel_version", "gpu_name", "ipv4", "ipv6", "region", "mem_total", "swap_total", "disk_total", "version"} {
+		if value, ok := info[key]; ok {
+			if text, ok := value.(string); ok && len(text) > 4096 {
+				return fmt.Errorf("basic information field too long: %s", key)
+			}
+			allowed[key] = value
+		}
+	}
+	info = allowed
 	applyFallbackClientIP(info, fallbackIP)
 	appendClientRegionFromGeoIP(info)
 	return clients.SaveClientInfo(info)

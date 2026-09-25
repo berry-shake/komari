@@ -118,7 +118,8 @@ func Register(r *gin.Engine) {
 			clientGroup.GET("/:uuid/token", admin.GetClientToken)
 			clientGroup.POST("/order", admin.OrderWeight)
 			// client terminal
-			clientGroup.GET("/:uuid/terminal", api.RequireSensitive2FA(), terminal.RequestTerminal)
+			clientGroup.POST("/:uuid/terminal/ticket", api.RequireSensitive2FA(), terminal.CreateTicket)
+			clientGroup.GET("/:uuid/terminal", terminal.RequireTicket(), terminal.RequestTerminal)
 		}
 
 		// records

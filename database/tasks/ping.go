@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"github.com/komari-monitor/komari/database/queryguard"
 	"time"
 
 	"github.com/komari-monitor/komari/database/dbcore"
@@ -201,7 +202,12 @@ func AddDefaultOnClientUUID(uuid string) error {
 }
 
 func GetPingRecords(uuid string, taskId int, start, end time.Time) ([]models.PingRecord, error) {
-	db := dbcore.GetDBInstance()
+	if !queryguard.ValidRange(start, end) {
+		return nil, queryguard.ErrTooLarge
+	}
+	ctx, cancel := queryguard.Context()
+	defer cancel()
+	db := dbcore.GetDBInstance().WithContext(ctx)
 	var records []models.PingRecord
 	dbQuery := db.Model(&models.PingRecord{})
 	if uuid != "" {
@@ -210,8 +216,11 @@ func GetPingRecords(uuid string, taskId int, start, end time.Time) ([]models.Pin
 	if taskId >= 0 {
 		dbQuery = dbQuery.Where("task_id = ?", uint(taskId))
 	}
-	if err := dbQuery.Where("time >= ? AND time <= ?", start, end).Order("time DESC").Find(&records).Error; err != nil {
+	if err := dbQuery.Where("time >= ? AND time <= ?", start, end).Order("time DESC").Limit(queryguard.MaxRows + 1).Find(&records).Error; err != nil {
 		return nil, err
+	}
+	if len(records) > queryguard.MaxRows {
+		return nil, queryguard.ErrTooLarge
 	}
 	return records, nil
 }

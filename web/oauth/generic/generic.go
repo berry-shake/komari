@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/utils"
 	"github.com/komari-monitor/komari/web/oauth/factory"
-	"github.com/patrickmn/go-cache"
 )
 
 func (g *Generic) GetName() string {
@@ -33,21 +32,17 @@ func (g *Generic) GetAuthorizationURL(redirectURI string) (string, string) {
 		url.QueryEscape(g.Addition.Scope),
 		url.QueryEscape(redirectURI),
 	)
-	g.stateCache.Set(state, true, cache.DefaultExpiration)
+	if !g.stateCache.Put(state, "", 5*time.Minute) {
+		return "", ""
+	}
 	return authURL, state
 }
 func (g *Generic) OnCallback(ctx *gin.Context, state string, query map[string]string, callbackURI string) (factory.OidcCallback, error) {
 	code := query["code"]
 
 	// 验证state防止CSRF攻击
-	if g.stateCache == nil {
-		return factory.OidcCallback{}, fmt.Errorf("state cache not initialized")
-	}
-	if _, ok := g.stateCache.Get(state); !ok {
-		return factory.OidcCallback{}, fmt.Errorf("invalid state")
-	}
-	if state == "" {
-		return factory.OidcCallback{}, fmt.Errorf("invalid state")
+	if _, ok := g.stateCache.Take(state); !ok {
+		return factory.OidcCallback{}, fmt.Errorf("invalid or expired state")
 	}
 
 	// 获取code
@@ -68,7 +63,7 @@ func (g *Generic) OnCallback(ctx *gin.Context, state string, query map[string]st
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
 	if err != nil {
 		return factory.OidcCallback{}, fmt.Errorf("failed to get access token: %s", utils.DataMasking(err.Error(), []string{g.Addition.ClientSecret, g.Addition.ClientId}))
 	}
@@ -87,7 +82,7 @@ func (g *Generic) OnCallback(ctx *gin.Context, state string, query map[string]st
 	userReq.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
 	userReq.Header.Set("Accept", "application/json")
 
-	userResp, err := http.DefaultClient.Do(userReq)
+	userResp, err := (&http.Client{Timeout: 20 * time.Second}).Do(userReq)
 	if err != nil {
 		return factory.OidcCallback{}, fmt.Errorf("failed to get user info: %v", err)
 	}
@@ -106,11 +101,11 @@ func (g *Generic) OnCallback(ctx *gin.Context, state string, query map[string]st
 	return factory.OidcCallback{UserId: fmt.Sprintf("%v", userId)}, nil
 }
 func (g *Generic) Init() error {
-	g.stateCache = cache.New(time.Minute*5, time.Minute*10)
+	g.stateCache.Clear()
 	return nil
 }
 func (g *Generic) Destroy() error {
-	g.stateCache.Flush()
+	g.stateCache.Clear()
 	return nil
 }
 

@@ -97,7 +97,7 @@ func Login(c *gin.Context) {
 	}
 	setSessionCookie(c, session, sessionCookieMaxAge)
 	auditlog.Log(c.ClientIP(), uuid, "logged in (password)", "login")
-	api.RespondSuccess(c, gin.H{"set-cookie": gin.H{"session_token": session}})
+	api.RespondSuccess(c, nil)
 }
 func Logout(c *gin.Context) {
 	session, _ := c.Cookie("session_token")
