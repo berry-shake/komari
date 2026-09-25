@@ -3,6 +3,8 @@ package log
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +15,7 @@ func GinLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
-		query := c.Request.URL.RawQuery
+		query := redactQuery(c.Request.URL.RawQuery)
 
 		// 处理请求
 		c.Next()
@@ -58,6 +60,20 @@ func GinLogger() gin.HandlerFunc {
 		r.AddAttrs(slog.String("_group", "GIN")) // 添加分组标识
 		handler.Handle(c.Request.Context(), r)
 	}
+}
+
+func redactQuery(raw string) string {
+	query, err := url.ParseQuery(raw)
+	if err != nil {
+		return "[invalid query]"
+	}
+	for key := range query {
+		name := strings.ToLower(key)
+		if strings.Contains(name, "token") || strings.Contains(name, "secret") || strings.Contains(name, "password") || name == "authorization" || name == "key" || name == "api_key" || name == "code" || name == "state" || name == "2fa_code" {
+			query.Set(key, "[REDACTED]")
+		}
+	}
+	return query.Encode()
 }
 
 // GinRecovery 返回一个 gin.HandlerFunc，用于恢复 panic

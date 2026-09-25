@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
-	"io"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -20,6 +20,7 @@ import (
 	agent_runtime "github.com/komari-monitor/komari/web/agent"
 	"github.com/komari-monitor/komari/web/api"
 	"github.com/komari-monitor/komari/web/connection"
+	"github.com/komari-monitor/komari/web/security"
 )
 
 func readMaybeCompressedBody(r *http.Request) ([]byte, error) {
@@ -30,9 +31,9 @@ func readMaybeCompressedBody(r *http.Request) ([]byte, error) {
 			return nil, err
 		}
 		defer zr.Close()
-		return io.ReadAll(zr)
+		return security.ReadBounded(zr, security.MaxMessageBytes)
 	}
-	return io.ReadAll(r.Body)
+	return security.ReadBounded(r.Body, security.MaxMessageBytes)
 }
 
 func bindV2Params[T any](raw any, target *T) error {
@@ -118,7 +119,12 @@ func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 func UploadV2RPC(c *gin.Context) {
 	bytesBody, err := readMaybeCompressedBody(c.Request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, v2.Error(nil, -32700, "invalid compressed body", err.Error()))
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.Is(err, security.ErrBodyTooLarge) || errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(status, v2.Error(nil, -32700, "invalid compressed body", err.Error()))
 		return
 	}
 	var req v2.Request
@@ -221,7 +227,7 @@ func clientUUIDFromContext(c *gin.Context) (string, bool) {
 			return uuid, true
 		}
 	}
-	token := c.Query("token")
+	token := api.ClientToken(c)
 	if token == "" {
 		return "", false
 	}

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"github.com/komari-monitor/komari/web/api"
 	"net"
 
 	"github.com/komari-monitor/komari/database/clients"
@@ -88,7 +89,7 @@ func UploadBasicInfo(c *gin.Context) {
 		return
 	}
 
-	token := c.Query("token")
+	token := api.ClientToken(c)
 	uuid, err := clients.GetClientUUIDByToken(token)
 	if uuid == "" || err != nil {
 		c.JSON(400, gin.H{"status": "error", "error": "Invalid token"})

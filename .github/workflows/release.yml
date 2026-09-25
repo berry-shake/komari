@@ -52,7 +52,11 @@ jobs:
       - uses: ./.github/actions/restore-frontend
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: go test -short ./...
-      - run: go test -race ./pkg/ddns ./web/api/admin
+      - name: Scan reachable Go vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          govulncheck ./...
+      - run: go test -race -short ./database/accounts ./pkg/ddns ./web/api/... ./web/connection ./web/oauth/github ./web/security ./utils/log
   binaries:
     needs: [prepare, frontend]
     runs-on: ubuntu-latest

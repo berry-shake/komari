@@ -1,6 +1,8 @@
 package connection
 
 import (
+	"encoding/json"
+	"github.com/komari-monitor/komari/web/security"
 	"sync"
 	"time"
 
@@ -39,10 +41,22 @@ func (sc *SafeConn) Close() error {
 	return sc.conn.Close()
 }
 func (sc *SafeConn) ReadMessage() (int, []byte, error) {
-	return sc.conn.ReadMessage()
+	kind, reader, err := sc.conn.NextReader()
+	if err != nil {
+		return kind, nil, err
+	}
+	data, err := security.ReadBounded(reader, security.MaxMessageBytes)
+	if err != nil {
+		_ = sc.conn.Close()
+	}
+	return kind, data, err
 }
 func (sc *SafeConn) ReadJSON(v interface{}) error {
-	return sc.conn.ReadJSON(v)
+	_, data, err := sc.ReadMessage()
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
 }
 func (sc *SafeConn) SetReadDeadline(t time.Time) error {
 	return sc.conn.SetReadDeadline(t)

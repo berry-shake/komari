@@ -58,7 +58,7 @@ func CorsMiddleware(initialEnabled bool, initialAllowedOrigins string) gin.Handl
 			c.Header("Access-Control-Allow-Origin", allowOrigin)
 			c.Header("Vary", "Origin")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Origin, Content-Length, Content-Type, Authorization, Accept, X-CSRF-Token, X-Requested-With, Set-Cookie, X-2FA-Code, X-Two-Factor-Code")
+			c.Header("Access-Control-Allow-Headers", "Origin, Content-Length, Content-Type, Authorization, X-Client-Token, Accept, X-CSRF-Token, X-Requested-With, Set-Cookie, X-2FA-Code, X-Two-Factor-Code")
 			c.Header("Access-Control-Expose-Headers", "Content-Length, Authorization, Set-Cookie")
 			if !authorizationPreflight {
 				c.Header("Access-Control-Allow-Credentials", "true")

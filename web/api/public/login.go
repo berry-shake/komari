@@ -2,14 +2,16 @@ package public
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/auditlog"
 	"github.com/komari-monitor/komari/pkg/config"
 	"github.com/komari-monitor/komari/utils"
 	"github.com/komari-monitor/komari/web/api"
+	"github.com/komari-monitor/komari/web/security"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,6 +23,9 @@ type LoginRequest struct {
 }
 
 const sessionCookieMaxAge = 2592000
+
+var loginPeers = security.NewAttemptLimiter(30, time.Minute)
+var loginAccounts = security.NewAttemptLimiter(10, time.Minute)
 
 func setSessionCookie(c *gin.Context, value string, maxAge int) {
 	http.SetCookie(c.Writer, &http.Cookie{
@@ -35,13 +40,18 @@ func setSessionCookie(c *gin.Context, value string, maxAge int) {
 }
 
 func Login(c *gin.Context) {
+	if !loginPeers.Allow(security.PeerKey(c.Request)) {
+		c.Header("Retry-After", "60")
+		api.RespondError(c, http.StatusTooManyRequests, "Too many login attempts")
+		return
+	}
 	DisablePasswordLogin, _ := config.GetAs[bool](config.DisablePasswordLoginKey, false)
 	if DisablePasswordLogin {
 		api.RespondError(c, http.StatusForbidden, "Password login is disabled")
 		return
 	}
 
-	bodyBytes, err := io.ReadAll(c.Request.Body)
+	bodyBytes, err := security.ReadBounded(c.Request.Body, 16<<10)
 	if err != nil {
 		api.RespondError(c, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
@@ -54,6 +64,11 @@ func Login(c *gin.Context) {
 	}
 	if data.Username == "" || data.Password == "" {
 		api.RespondError(c, http.StatusBadRequest, "Invalid request body: Username and password are required")
+		return
+	}
+	if !loginAccounts.Allow(strings.ToLower(data.Username)) {
+		c.Header("Retry-After", "60")
+		api.RespondError(c, http.StatusTooManyRequests, "Too many login attempts")
 		return
 	}
 

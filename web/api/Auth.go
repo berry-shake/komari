@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/clients"
 	"github.com/komari-monitor/komari/pkg/config"
+	"github.com/komari-monitor/komari/web/security"
 	"gorm.io/gorm"
 )
 
@@ -29,6 +31,9 @@ func IdentityMiddleware() gin.HandlerFunc {
 		// 1. API Key 认证
 		apiKey := c.GetHeader("Authorization")
 		if isApiKeyValid(apiKey) {
+			if !limitRequestBody(c, true) {
+				return
+			}
 			c.Set("role", RoleAdmin)
 			c.Set("api_key", apiKey[7:])
 			c.Set("uuid", "00000000-0000-0000-0000-000000000000") // API Key
@@ -41,6 +46,9 @@ func IdentityMiddleware() gin.HandlerFunc {
 		if err == nil && session != "" {
 			uuid, err := accounts.GetSession(session)
 			if err == nil {
+				if !limitRequestBody(c, true) {
+					return
+				}
 				c.Set("role", RoleAdmin)
 				c.Set("session", session)
 				c.Set("uuid", uuid)
@@ -51,8 +59,15 @@ func IdentityMiddleware() gin.HandlerFunc {
 		}
 
 		// 3. Client Token 认证
+		if !limitRequestBody(c, false) {
+			return
+		}
 		token := extractClientToken(c)
+		if c.IsAborted() {
+			return
+		}
 		if token != "" {
+			c.Set("client_token", token)
 			uuid, err := checkTokenAndGetUUID(token)
 			if err == nil && uuid != "" {
 				c.Set("role", RoleClient)
@@ -105,8 +120,7 @@ var publicPaths = []string{
 	"/api/oauth",
 	"/api/oauth_callback",
 	"/api/version",
-	"/api/recent",
-	"/api/admin",    // 由 RequireRole 处理
+	"/api/admin/",   // 由 RequireRole 处理
 	"/api/clients/", // 由 RequireRole 处理
 }
 
@@ -124,7 +138,7 @@ func PrivateSiteMiddleware() gin.HandlerFunc {
 
 		// 公开路径直接放行
 		for _, p := range publicPaths {
-			if strings.HasPrefix(path, p) {
+			if path == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(path, p)) {
 				c.Next()
 				return
 			}
@@ -178,15 +192,60 @@ func hasTempAccess(c *gin.Context) bool {
 	return expireAt >= time.Now().Unix()
 }
 
+// ClientToken supports existing agents while keeping new credentials out of URLs.
+func ClientToken(c *gin.Context) string {
+	if token := c.GetString("client_token"); token != "" {
+		return token
+	}
+	if token := c.GetHeader("X-Client-Token"); token != "" {
+		return token
+	}
+	return c.Query("token")
+}
+
+func limitRequestBody(c *gin.Context, admin bool) bool {
+	limit := security.MaxMessageBytes
+	if c.Request.URL.Path == "/api/login" {
+		limit = 16 << 10
+	}
+	if admin {
+		switch c.Request.URL.Path {
+		case "/api/admin/theme/upload":
+			limit = security.MaxThemeBytes
+		case "/api/admin/upload/backup":
+			limit = security.MaxBackupBytes
+		case "/api/admin/update/favicon":
+			limit = 5 << 20
+		}
+	}
+	if c.Request.ContentLength > limit {
+		RespondError(c, http.StatusRequestEntityTooLarge, "Request body too large")
+		c.Abort()
+		return false
+	}
+	if c.Request.Body != nil {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+	}
+	return true
+}
+
 func extractClientToken(c *gin.Context) string {
-	token := c.Query("token")
+	token := ClientToken(c)
 	if token != "" {
 		return token
 	}
 
-	if c.Request.Method != http.MethodGet {
+	// Only legacy agent JSON requests need body authentication. Never read an
+	// unauthenticated admin upload or login body just to look for a node token.
+	if strings.HasPrefix(c.Request.URL.Path, "/api/clients/") && c.Request.Method != http.MethodGet &&
+		(c.ContentType() == "application/json" || c.ContentType() == "") {
 		bodyBytes, err := io.ReadAll(c.Request.Body)
 		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				RespondError(c, http.StatusRequestEntityTooLarge, "Request body too large")
+				c.Abort()
+			}
 			return ""
 		}
 		c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))

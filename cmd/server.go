@@ -120,8 +120,11 @@ func RunServer() {
 	router.Register(r)
 
 	srv := &http.Server{
-		Addr:    flags.Listen,
-		Handler: r,
+		Addr:              flags.Listen,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		IdleTimeout:       90 * time.Second,
 	}
 	log.Printf("Starting server on %s ...", flags.Listen)
 	go func() {
@@ -149,7 +152,11 @@ func InitDatabase() {
 		if err != nil {
 			panic(err)
 		}
-		log.Println("Default admin account created. Username:", user, ", Password:", passwd)
+		if os.Getenv("ADMIN_PASSWORD") == "" {
+			log.Println("Default admin account created. Username:", user, ", Temporary password:", passwd)
+		} else {
+			log.Println("Default admin account created. Username:", user, ", password supplied via ADMIN_PASSWORD")
+		}
 	}
 }
 

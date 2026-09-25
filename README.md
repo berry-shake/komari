@@ -81,7 +81,7 @@ sudo ./install-komari.sh
 
 #### Dependencies
 
-- Go 1.24.11+ and Node.js 24+ (for manual build)
+- Go 1.26.8+ and Node.js 24+ (for manual build)
 
 1. Build the frontend static files:
    ```bash

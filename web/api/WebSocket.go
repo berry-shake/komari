@@ -32,7 +32,11 @@ func UpgradeWebSocket(c *gin.Context, options ...WebSocketUpgradeOption) (*webso
 	for _, option := range options {
 		option(&upgrader)
 	}
-	return upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err == nil {
+		conn.SetReadLimit(security.MaxMessageBytes)
+	}
+	return conn, err
 }
 
 func CheckWebSocketOrigin(r *http.Request) bool {
@@ -43,7 +47,7 @@ func CheckWebSocketOrigin(r *http.Request) bool {
 	if security.IsAPIKeyRequest(r) {
 		return true
 	}
-	if origin == "" && r.URL.Query().Get("token") != "" {
+	if origin == "" && (r.URL.Query().Get("token") != "" || r.Header.Get("X-Client-Token") != "") {
 		return true
 	}
 	enabled, _ := config.GetAs[bool](config.WsOriginCheckEnabledKey, true)

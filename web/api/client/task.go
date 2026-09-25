@@ -1,6 +1,7 @@
 package client
 
 import (
+	"github.com/komari-monitor/komari/web/api"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,7 @@ import (
 )
 
 func TaskResult(c *gin.Context) {
-	token := c.Query("token")
+	token := api.ClientToken(c)
 	clientId, _ := clients.GetClientUUIDByToken(token)
 	if clientId == "" {
 		c.JSON(400, gin.H{"status": "error", "message": "Invalid or missing token"})

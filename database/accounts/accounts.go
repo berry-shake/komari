@@ -2,9 +2,11 @@ package accounts
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/komari-monitor/komari/database/dbcore"
@@ -12,6 +14,7 @@ import (
 	"github.com/komari-monitor/komari/utils"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const constantSalt = "06Wm4Jv1Hkxx"
@@ -27,8 +30,19 @@ func CheckPassword(username, passwd string) (uuid string, success bool) {
 		// 静默处理错误，不显示日志
 		return "", false
 	}
-	if hashPasswd(passwd) != user.Passwd {
+	if !verifyPassword(passwd, user.Passwd) {
 		return "", false
+	}
+	if !strings.HasPrefix(user.Passwd, passwordHashPrefix) {
+		upgraded, err := hashPasswd(passwd)
+		if err != nil {
+			return "", false
+		}
+		// Compare-and-swap: a concurrent password reset must never be overwritten.
+		result := db.Model(&models.User{}).Where("uuid = ? AND passwd = ?", user.UUID, user.Passwd).Update("passwd", upgraded)
+		if result.Error != nil || result.RowsAffected != 1 {
+			return "", false
+		}
 	}
 	return user.UUID, true
 }
@@ -36,7 +50,11 @@ func CheckPassword(username, passwd string) (uuid string, success bool) {
 // ForceResetPassword 强制重置用户密码
 func ForceResetPassword(username, passwd string) (err error) {
 	db := dbcore.GetDBInstance()
-	result := db.Model(&models.User{}).Where("username = ?", username).Update("passwd", hashPasswd(passwd))
+	hashed, err := hashPasswd(passwd)
+	if err != nil {
+		return err
+	}
+	result := db.Model(&models.User{}).Where("username = ?", username).Update("passwd", hashed)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -47,7 +65,7 @@ func ForceResetPassword(username, passwd string) (err error) {
 }
 
 // hashPasswd 对密码进行加盐哈希
-func hashPasswd(passwd string) string {
+func legacyHashPasswd(passwd string) string {
 	saltedPassword := passwd + constantSalt
 	hash := sha256.New()
 	hash.Write([]byte(saltedPassword))
@@ -55,9 +73,33 @@ func hashPasswd(passwd string) string {
 	return hashedPassword
 }
 
+// Prehashing preserves existing passwords longer than bcrypt's 72-byte limit.
+const passwordHashPrefix = "$komari$bcrypt-sha256$"
+
+func hashPasswd(passwd string) (string, error) {
+	digest := sha256.Sum256([]byte(passwd))
+	encoded := base64.StdEncoding.EncodeToString(digest[:])
+	hash, err := bcrypt.GenerateFromPassword([]byte(encoded), 12)
+	if err != nil {
+		return "", err
+	}
+	return passwordHashPrefix + string(hash), nil
+}
+func verifyPassword(passwd, stored string) bool {
+	if strings.HasPrefix(stored, passwordHashPrefix) {
+		digest := sha256.Sum256([]byte(passwd))
+		return bcrypt.CompareHashAndPassword([]byte(strings.TrimPrefix(stored, passwordHashPrefix)), []byte(base64.StdEncoding.EncodeToString(digest[:]))) == nil
+	}
+	legacy := legacyHashPasswd(passwd)
+	return subtle.ConstantTimeCompare([]byte(legacy), []byte(stored)) == 1
+}
+
 func CreateAccount(username, passwd string) (user models.User, err error) {
 	db := dbcore.GetDBInstance()
-	hashedPassword := hashPasswd(passwd)
+	hashedPassword, err := hashPasswd(passwd)
+	if err != nil {
+		return models.User{}, err
+	}
 	user = models.User{
 		UUID:     uuid.New().String(),
 		Username: username,
@@ -93,7 +135,10 @@ func CreateDefaultAdminAccount() (username, passwd string, err error) {
 		passwd = utils.GeneratePassword()
 	}
 
-	hashedPassword := hashPasswd(passwd)
+	hashedPassword, err := hashPasswd(passwd)
+	if err != nil {
+		return "", "", err
+	}
 
 	user := models.User{
 		UUID:      uuid.New().String(),
@@ -166,7 +211,11 @@ func UpdateUser(uuid string, name, password, sso_type *string) error {
 		updates["username"] = *name
 	}
 	if password != nil {
-		updates["passwd"] = hashPasswd(*password)
+		hashed, err := hashPasswd(*password)
+		if err != nil {
+			return err
+		}
+		updates["passwd"] = hashed
 	}
 	if sso_type != nil {
 		updates["sso_type"] = *sso_type

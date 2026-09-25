@@ -3,6 +3,7 @@ package public
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/database/accounts"
@@ -10,10 +11,18 @@ import (
 	"github.com/komari-monitor/komari/pkg/config"
 	"github.com/komari-monitor/komari/utils"
 	"github.com/komari-monitor/komari/web/oauth"
+	"github.com/komari-monitor/komari/web/security"
 )
+
+var oauthAttempts = security.NewAttemptLimiter(20, time.Minute)
 
 // /api/oauth
 func OAuth(c *gin.Context) {
+	if !oauthAttempts.Allow(security.PeerKey(c.Request)) {
+		c.Header("Retry-After", "60")
+		c.JSON(429, gin.H{"status": "error", "error": "Too many login attempts"})
+		return
+	}
 	OAuthEnabled, _ := config.GetAs[bool](config.OAuthEnabledKey, false)
 	if !OAuthEnabled {
 		c.JSON(403, gin.H{"status": "error", "error": "OAuth is not enabled"})
@@ -21,6 +30,11 @@ func OAuth(c *gin.Context) {
 	}
 
 	authURL, state := oauth.CurrentProvider().GetAuthorizationURL(utils.GetCallbackURL(c))
+	if authURL == "" || state == "" {
+		c.Header("Retry-After", "60")
+		c.JSON(503, gin.H{"status": "error", "error": "Login temporarily unavailable"})
+		return
+	}
 
 	c.SetCookie("oauth_state", state, 3600, "/", "", false, true)
 

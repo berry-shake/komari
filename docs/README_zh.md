@@ -78,7 +78,7 @@ sudo ./install-komari.sh
 
 #### 依赖
 
-- Go 1.24.11+ 和 Node.js 24+（手工构建）
+- Go 1.26.8+ 和 Node.js 24+（手工构建）
 
 1. 构建前端静态文件：
    ```bash

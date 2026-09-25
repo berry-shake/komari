@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	komari_utils "github.com/komari-monitor/komari/utils"
@@ -40,6 +41,12 @@ func (l *GormLogger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 	return &newlogger
 }
 
+// Keep SQL placeholders in diagnostic logs; values can contain node tokens,
+// OAuth secrets or password hashes even when the request logger is redacted.
+func (l *GormLogger) ParamsFilter(_ context.Context, sql string, _ ...interface{}) (string, []interface{}) {
+	return sql, nil
+}
+
 func (l *GormLogger) Info(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= gormlogger.Info {
 		slog.InfoContext(ctx, fmt.Sprintf(msg, data...))
@@ -65,6 +72,16 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (stri
 
 	elapsed := time.Since(begin)
 	sql, rows := fc()
+	// Some GORM paths (notably Raw().Scan()) bypass ParamsFilter. Keep only
+	// the operation name rather than trusting an already interpolated query.
+	operation := "SQL"
+	if fields := strings.Fields(sql); len(fields) > 0 {
+		switch verb := strings.ToUpper(fields[0]); verb {
+		case "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "PRAGMA":
+			operation = verb
+		}
+	}
+	sql = operation + " [statement omitted]"
 
 	fileWithLineNum := utils.FileWithLineNum()
 

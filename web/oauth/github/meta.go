@@ -2,7 +2,8 @@ package github
 
 import (
 	"github.com/komari-monitor/komari/web/oauth/factory"
-	"github.com/patrickmn/go-cache"
+	"sync"
+	"time"
 )
 
 func init() {
@@ -13,7 +14,8 @@ func init() {
 
 type Github struct {
 	Addition
-	stateCache *cache.Cache // 用于存储state和用户信息的映射
+	stateMu sync.Mutex
+	states  map[string]time.Time
 }
 
 type Addition struct {

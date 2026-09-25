@@ -185,7 +185,7 @@ func WebSocketReport(c *gin.Context) {
 	var errMsg string
 
 	// 优先检查查询参数中的 token
-	token = c.Query("token")
+	token = api.ClientToken(c)
 
 	// 如果 token 为空，返回错误
 	if token == "" {
