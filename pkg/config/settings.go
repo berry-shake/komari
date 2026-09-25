@@ -21,14 +21,10 @@ type Settings struct {
 	// GeoIP 配置
 	GeoIpEnabled  bool   `json:"geo_ip_enabled" default:"true"`
 	GeoIpProvider string `json:"geo_ip_provider" default:"ipinfo"` // empty, mmdb, ip-api, geojs
-	// Nezha 兼容（Agent gRPC）
-	NezhaCompatEnabled bool   `json:"nezha_compat_enabled" default:"false"`
-	NezhaCompatListen  string `json:"nezha_compat_listen" default:""` // 例如 0.0.0.0:5555
 	// OAuth 配置
-	OAuthEnabled          bool   `json:"o_auth_enabled" default:"false"`
-	OAuthProvider         string `json:"o_auth_provider" default:"github"`
-	DisablePasswordLogin  bool   `json:"disable_password_login" default:"false"`
-	CloudflareTunnelToken string `json:"cloudflare_tunnel_token" default:""`
+	OAuthEnabled         bool   `json:"o_auth_enabled" default:"false"`
+	OAuthProvider        string `json:"o_auth_provider" default:"github"`
+	DisablePasswordLogin bool   `json:"disable_password_login" default:"false"`
 	// 自定义美化
 	CustomHead string `json:"custom_head" default:""`
 	CustomBody string `json:"custom_body" default:""`
@@ -64,12 +60,9 @@ const (
 	BaseScriptsURLKey             = "base_scripts_url"
 	GeoIpEnabledKey               = "geo_ip_enabled"
 	GeoIpProviderKey              = "geo_ip_provider"
-	NezhaCompatEnabledKey         = "nezha_compat_enabled"
-	NezhaCompatListenKey          = "nezha_compat_listen"
 	OAuthEnabledKey               = "o_auth_enabled"
 	OAuthProviderKey              = "o_auth_provider"
 	DisablePasswordLoginKey       = "disable_password_login"
-	CloudflareTunnelTokenKey      = "cloudflare_tunnel_token"
 	CustomHeadKey                 = "custom_head"
 	CustomBodyKey                 = "custom_body"
 	NotificationEnabledKey        = "notification_enabled"
@@ -85,3 +78,9 @@ const (
 	UpdatedAtKey                  = "updated_at"
 	XtermjsSettingsKey            = "xtermjs_settings"
 )
+
+// RemovedSettingKeys identifies retired integrations. Startup migration deletes
+// these keys, and the admin API rejects stale clients trying to restore them.
+func RemovedSettingKeys() []string {
+	return []string{"nezha_compat_enabled", "nezha_compat_listen", "cloudflare_tunnel_token"}
+}

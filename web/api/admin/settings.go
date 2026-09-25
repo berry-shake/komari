@@ -28,6 +28,13 @@ func EditSettings(c *gin.Context) {
 		return
 	}
 
+	for _, key := range config.RemovedSettingKeys() {
+		if _, exists := cfg[key]; exists {
+			api.RespondError(c, 400, "Setting is no longer supported: "+key)
+			return
+		}
+	}
+
 	if err := config.SetMany(cfg); err != nil {
 		api.RespondError(c, 500, "Failed to update settings: "+err.Error())
 		return

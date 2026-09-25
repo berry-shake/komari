@@ -27,8 +27,6 @@ type legacyModelConfig struct {
 	EulaAccepted               bool    `json:"eula_accepted" gorm:"default:false"`
 	GeoIpEnabled               bool    `json:"geo_ip_enabled" gorm:"default:true"`
 	GeoIpProvider              string  `json:"geo_ip_provider" gorm:"type:varchar(20);default:'ip-api'"`
-	NezhaCompatEnabled         bool    `json:"nezha_compat_enabled" gorm:"default:false"`
-	NezhaCompatListen          string  `json:"nezha_compat_listen" gorm:"type:varchar(100);default:''"`
 	OAuthEnabled               bool    `json:"o_auth_enabled" gorm:"default:false"`
 	OAuthProvider              string  `json:"o_auth_provider" gorm:"type:varchar(50);default:'github'"`
 	DisablePasswordLogin       bool    `json:"disable_password_login" gorm:"default:false"`
@@ -66,12 +64,9 @@ type legacyConfig struct {
 	BaseScriptsURLKey          string    `json:"base_scripts_url"`
 	GeoIpEnabled               bool      `json:"geo_ip_enabled"`
 	GeoIpProvider              string    `json:"geo_ip_provider"`
-	NezhaCompatEnabled         bool      `json:"nezha_compat_enabled"`
-	NezhaCompatListen          string    `json:"nezha_compat_listen"`
 	OAuthEnabled               bool      `json:"o_auth_enabled"`
 	OAuthProvider              string    `json:"o_auth_provider"`
 	DisablePasswordLogin       bool      `json:"disable_password_login"`
-	CloudflareTunnelToken      string    `json:"cloudflare_tunnel_token"`
 	CustomHead                 string    `json:"custom_head"`
 	CustomBody                 string    `json:"custom_body"`
 	NotificationEnabled        bool      `json:"notification_enabled"`
@@ -130,6 +125,12 @@ func Run(ctx Context) error {
 	if legacyConfigTable {
 		if err := migrateLegacyConfigToItems(db); err != nil {
 			return err
+		}
+	}
+
+	if db.Migrator().HasTable(&appconfig.ConfigItem{}) {
+		if err := db.Where("key IN ?", appconfig.RemovedSettingKeys()).Delete(&appconfig.ConfigItem{}).Error; err != nil {
+			return fmt.Errorf("remove retired integration settings: %w", err)
 		}
 	}
 

@@ -257,3 +257,33 @@ func TestRunExpandsLegacyPingAllClientsTasks(t *testing.T) {
 		t.Fatalf("unexpected clients json: %s", raw)
 	}
 }
+
+func TestRunRemovesRetiredIntegrationSettings(t *testing.T) {
+	db := openTestDB(t, t.Name())
+	if err := db.AutoMigrate(&appconfig.ConfigItem{}); err != nil {
+		t.Fatal(err)
+	}
+	items := []appconfig.ConfigItem{
+		{Key: "nezha_compat_enabled", Value: "true"},
+		{Key: "nezha_compat_listen", Value: `"0.0.0.0:5555"`},
+		{Key: "cloudflare_tunnel_token", Value: `"old-encrypted-token"`},
+		{Key: appconfig.OAuthProviderKey, Value: `"github"`},
+		{Key: appconfig.AutoDiscoveryKeyKey, Value: `"keep-agent-registration"`},
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Repeated startup must remove only retired keys and preserve live settings.
+	for i := 0; i < 2; i++ {
+		if err := Run(Context{DB: db}); err != nil {
+			t.Fatal(err)
+		}
+		var remaining []appconfig.ConfigItem
+		if err := db.Order("key").Find(&remaining).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(remaining) != 2 || remaining[0] != items[4] || remaining[1] != items[3] {
+			t.Fatalf("unexpected settings after migration: %v", remaining)
+		}
+	}
+}

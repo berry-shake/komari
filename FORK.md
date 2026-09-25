@@ -39,7 +39,7 @@ git push origin mod refs/tags/1.2.4
 gh -R berry-shake/REPOSITORY workflow run release.yml --ref mod -f tag=1.2.4
 ```
 
-已发布资产不可覆盖，修复递增为 1.2.5 等新版本。安装器先下载临时文件并验证 SHA256，再替换服务；原安装参数继续保留。
+默认不覆盖已发布资产，后续修复递增版本。本次按维护者明确要求重发 1.2.5：先验证新提交，再删除原 1.2.5 Release、重建标签并重新构建；旧产物在本地留档。安装器先下载临时文件并验证 SHA256，再替换服务；原安装参数继续保留。
 
 ## 原生 DDNS
 
@@ -50,6 +50,10 @@ gh -R berry-shake/REPOSITORY workflow run release.yml --ref mod -f tag=1.2.4
 ## 后台登录入口
 
 1.2.5 在后台路由入口验证登录状态，确认登录后才加载管理导航、子页面和设置。未登录显示独立登录页；身份请求失败显示可重试状态，不加载管理页面。密码和双因素登录保留原访问路径，GitHub OAuth 继续使用原入口。页面重新获得焦点或每分钟检查会话，失效后卸载管理页面；合法会话的后台检查不打断当前表单。法律声明只在登录后且设置明确要求接受时显示。
+
+## 已移除的集成
+
+1.2.5 重发移除哪吒 Agent gRPC 兼容和内置 Cloudflare Tunnel：包含启动逻辑、管理 API、后台入口、配置项及镜像中的 cloudflared。启动迁移仅清理这两项功能的三个旧配置键，管理 API 拒绝重新写入。Komari 原生 WebSocket/HTTP 上报、单 SQLite、延迟监控、GitHub 登录及 Cloudflare DNS DDNS 保留。DDNS 的 Cloudflare 设置卡片默认折叠，展开后可编辑；临时收起不会丢失尚未保存的输入。
 
 ## 本地验证
 
