@@ -56,7 +56,7 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck ./...
-      - run: go test -race -short ./database/accounts ./pkg/ddns ./web/api/... ./web/connection ./web/oauth/... ./web/security ./utils/log ./utils/messageSender/javascript ./database/queryguard
+      - run: go test -race -short ./database/accounts ./pkg/ddns ./web/api/... ./web/router ./web/connection ./web/oauth/... ./web/security ./utils/log ./utils/messageSender/javascript ./database/queryguard
   binaries:
     needs: [prepare, frontend]
     runs-on: ubuntu-latest

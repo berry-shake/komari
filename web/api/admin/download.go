@@ -105,6 +105,11 @@ func backupSQLiteTo(destDBPath string) error {
 
 // DownloadBackup 用于打包 ./data 目录及数据库文件为 zip 并通过 HTTP 下载
 func DownloadBackup(c *gin.Context) {
+	if err := api.VerifySensitive2FA(c); err != nil {
+		api.RespondError(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	// 1) 创建临时目录
 	tempDir, err := os.MkdirTemp("", "komari-backup-*")
 	if err != nil {

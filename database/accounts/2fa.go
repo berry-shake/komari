@@ -27,9 +27,14 @@ func Generate2Fa() (string, image.Image, error) {
 	return otp.Secret(), img, nil
 }
 
-func Enable2Fa(uuid, secret string) error {
+// Replace2Fa changes only the factor that was verified by the caller. A stale
+// enrollment must not overwrite a factor enabled or replaced in another request.
+func Replace2Fa(uuid, previous, secret string) (bool, error) {
 	db := dbcore.GetDBInstance()
-	return db.Model(&models.User{}).Where("uuid = ?", uuid).Update("two_factor", secret).Error
+	result := db.Model(&models.User{}).
+		Where("uuid = ? AND COALESCE(two_factor, '') = ?", uuid, previous).
+		Update("two_factor", secret)
+	return result.RowsAffected == 1, result.Error
 }
 
 func Verify2Fa(uuid, code string) (bool, error) {
@@ -50,9 +55,4 @@ func Verify2Fa(uuid, code string) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func Disable2Fa(uuid string) error {
-	db := dbcore.GetDBInstance()
-	return db.Model(&models.User{}).Where("uuid = ?", uuid).Update("two_factor", "").Error
 }

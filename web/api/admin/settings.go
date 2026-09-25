@@ -17,7 +17,25 @@ func GetSettings(c *gin.Context) {
 		api.RespondError(c, 500, "Failed to get settings: "+err.Error())
 		return
 	}
+	cst["api_key_configured"] = cst[config.ApiKeyKey] != nil && cst[config.ApiKeyKey] != ""
+	delete(cst, config.ApiKeyKey)
+	c.Header("Cache-Control", "no-store")
 	api.RespondSuccess(c, cst)
+}
+
+// RevealAPIKey is deliberately separate from the routine settings read.
+func RevealAPIKey(c *gin.Context) {
+	if err := api.VerifySensitive2FA(c); err != nil {
+		api.RespondError(c, 401, err.Error())
+		return
+	}
+	key, err := config.GetAs[string](config.ApiKeyKey, "")
+	if err != nil {
+		api.RespondError(c, 500, "Failed to read API key")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	api.RespondSuccess(c, gin.H{"api_key": key})
 }
 
 // EditSettings 更新自定义配置
@@ -26,6 +44,26 @@ func EditSettings(c *gin.Context) {
 	if err := c.ShouldBindJSON(&cfg); err != nil {
 		api.RespondError(c, 400, "Invalid or missing request body: "+err.Error())
 		return
+	}
+	// Verification may inspect JSON. BindJSON has consumed it, so preserve the
+	// submitted OTP in the context, then remove all verification/response metadata.
+	for _, key := range []string{"2fa_code", "two_factor_code", "otp"} {
+		if value, ok := cfg[key].(string); ok && value != "" && c.GetString("2fa_code") == "" {
+			c.Set("2fa_code", value)
+		}
+		delete(cfg, key)
+	}
+	delete(cfg, "api_key_configured")
+	if value, exists := cfg[config.ApiKeyKey]; exists {
+		if err := api.VerifySensitive2FA(c); err != nil {
+			api.RespondError(c, 401, err.Error())
+			return
+		}
+		key, ok := value.(string)
+		if !ok || (key != "" && len(key) < 12) {
+			api.RespondError(c, 400, "API key must be empty or a string of at least 12 characters")
+			return
+		}
 	}
 
 	for _, key := range config.RemovedSettingKeys() {

@@ -59,7 +59,7 @@ func Register(r *gin.Engine) {
 	{
 		admin.RegisterDDNSRoutes(adminAuthrized, ddns.Default())
 		adminAuthrized.GET("/download/backup", admin.DownloadBackup)
-		adminAuthrized.POST("/upload/backup", admin.UploadBackup)
+		adminAuthrized.POST("/upload/backup", api.RequireSensitive2FA(), admin.UploadBackup)
 		// test
 		testGroup := adminAuthrized.Group("/test")
 		{
@@ -89,6 +89,7 @@ func Register(r *gin.Engine) {
 		{
 			settingsGroup.GET("/", admin.GetSettings)
 			settingsGroup.POST("/", admin.EditSettings)
+			settingsGroup.POST("/api-key/reveal", admin.RevealAPIKey)
 			settingsGroup.GET("/xtermjs", admin.GetXtermJSSettings)
 			settingsGroup.POST("/xtermjs", admin.SetXtermJSSettings)
 			settingsGroup.POST("/oidc", admin.SetOidcProvider)
@@ -142,9 +143,9 @@ func Register(r *gin.Engine) {
 		}
 		two_factorGroup := adminAuthrized.Group("/2fa")
 		{
-			two_factorGroup.GET("/generate", admin.Generate2FA)
+			two_factorGroup.POST("/generate", admin.Generate2FA)
 			two_factorGroup.POST("/enable", admin.Enable2FA)
-			two_factorGroup.POST("/disable", api.RequireSensitive2FA(), admin.Disable2FA)
+			two_factorGroup.POST("/disable", admin.Disable2FA)
 		}
 		adminAuthrized.GET("/logs", log_api.GetLogs)
 

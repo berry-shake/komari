@@ -4,11 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/database/accounts"
+	"github.com/komari-monitor/komari/web/security"
+	"github.com/pquerna/otp/totp"
 )
+
+var sensitiveAttempts = security.NewAttemptLimiter(10, time.Minute)
 
 func RequireSensitive2FA() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -37,18 +44,23 @@ func VerifySensitive2FA(c *gin.Context) error {
 	if err != nil {
 		return err
 	}
-	if user.TwoFactor == "" {
+	return VerifySensitiveFactor(c, uuidString, user.TwoFactor)
+}
+
+// VerifySensitiveFactor verifies the exact factor snapshot that a caller will
+// use for a compare-and-swap update. It never bypasses verification for API keys.
+func VerifySensitiveFactor(c *gin.Context, uuid, secret string) error {
+	if secret == "" {
 		return nil
 	}
 	code := get2FACode(c)
 	if code == "" {
 		return err2FARequired()
 	}
-	valid, err := accounts.Verify2Fa(uuidString, code)
-	if err != nil {
-		return err
+	if !sensitiveAttempts.Allow(uuid) {
+		return &sensitive2FAError{"Too many 2FA attempts; try again in one minute"}
 	}
-	if !valid {
+	if !totp.Validate(code, secret) {
 		return err2FAInvalid()
 	}
 	return nil
@@ -72,6 +84,12 @@ func get2FACode(c *gin.Context) string {
 		}
 	}
 	if c.Request.Body == nil || c.Request.Method == http.MethodGet {
+		return ""
+	}
+	// Multipart backups carry the OTP in a header. Do not buffer an entire
+	// upload merely to look for a JSON verification field.
+	mediaType, _, _ := mime.ParseMediaType(c.GetHeader("Content-Type"))
+	if mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
 		return ""
 	}
 	bodyBytes, err := io.ReadAll(c.Request.Body)
