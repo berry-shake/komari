@@ -8,8 +8,8 @@
 
 | 仓库 | 上游代码基线 | 当前发行版本 |
 | --- | --- | --- |
-| komari | 1.2.3 (`618ced3b8f0abd53d0e9ec1db0d90a948d2d221a`) | 1.2.4 |
-| komari-web | 1.2.3 (`296fe766fab39c2ad7a4a3dd8caf3dcfebae3222`) | 1.2.4 |
+| komari | 1.2.3 (`618ced3b8f0abd53d0e9ec1db0d90a948d2d221a`) | 1.2.5 |
+| komari-web | 1.2.3 (`296fe766fab39c2ad7a4a3dd8caf3dcfebae3222`) | 1.2.5 |
 | komari-agent | 1.2.13 | 1.2.4 |
 
 服务端继续使用 1.2.3 的单 SQLite 设计，不引入新指标存储模块，不创建 metrics.db，不连接 PostgreSQL。节点 UUID/Token、延迟任务、GitHub OAuth、账号绑定和主题配置保持兼容。WAL/SHM 是同一 SQLite 数据库的活动文件。
@@ -46,6 +46,10 @@ gh -R berry-shake/REPOSITORY workflow run release.yml --ref mod -f tag=1.2.4
 原生 DDNS 使用 Go 模块与后台 `/admin/ddns`，Cloudflare 设置、记录、状态和最近 500 条日志均存入 komari.db，无需插件运行时。1.2.4 增加服务端日志分页，后台默认每页 20 条，可切换 50/100 条，支持筛选、首末页及前后翻页；清空和刷新回到第一页。
 
 来源、许可和使用说明见 [DDNS 文档](https://github.com/berry-shake/komari/blob/mod/docs/DDNS.md)。
+
+## 后台登录入口
+
+1.2.5 在后台路由入口验证登录状态，确认登录后才加载管理导航、子页面和设置。未登录显示独立登录页；身份请求失败显示可重试状态，不加载管理页面。密码和双因素登录保留原访问路径，GitHub OAuth 继续使用原入口。页面重新获得焦点或每分钟检查会话，失效后卸载管理页面；合法会话的后台检查不打断当前表单。法律声明只在登录后且设置明确要求接受时显示。
 
 ## 本地验证
 
