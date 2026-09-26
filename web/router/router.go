@@ -39,7 +39,6 @@ func Register(r *gin.Engine) {
 	r.GET("/api/task/ping", public_api.GetPublicPingTasks)
 	r.GET("/api/rpc2", jsonRpc.OnRpcRequest)
 	r.POST("/api/rpc2", jsonRpc.OnRpcRequest)
-	r.GET("/api/mjpeg_live", public_api.MjpegLiveHandler)
 	// #region Agent
 	r.POST("/api/clients/register", client.RegisterClient)
 	tokenAuthrized := r.Group("/api/clients", api.RequireRole(api.RoleAdmin, api.RoleClient))

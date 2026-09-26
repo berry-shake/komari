@@ -259,7 +259,8 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 
 	// 3. SPA 路由 (noRoute)
 	noRoute(func(c *gin.Context) {
-		if c.Request.Method != http.MethodGet {
+		// Removed or unknown API endpoints must not fall back to the SPA.
+		if c.Request.Method != http.MethodGet || c.Request.URL.Path == "/api" || strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.Status(http.StatusNotFound)
 			return
 		}
