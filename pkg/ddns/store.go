@@ -3,6 +3,7 @@ package ddns
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -131,9 +132,11 @@ func (s *Service) Records() ([]RecordView, error) {
 }
 func (s *Service) Nodes() ([]Node, error) {
 	rows := []models.Client{}
-	if err := s.db.Select("uuid,name,ipv4,ipv6").Order("weight desc,name").Find(&rows).Error; err != nil {
+	if err := s.db.Select("uuid,name,ipv4,ipv6,weight").Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	// Match the admin server list: stable ascending weight, retaining ties.
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Weight < rows[j].Weight })
 	online := map[string]bool{}
 	for _, id := range s.online() {
 		online[id] = true
