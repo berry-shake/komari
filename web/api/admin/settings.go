@@ -1,14 +1,26 @@
 package admin
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/komari-monitor/komari/database/auditlog"
 	"github.com/komari-monitor/komari/database/records"
 	"github.com/komari-monitor/komari/database/tasks"
 	"github.com/komari-monitor/komari/pkg/config"
+	"github.com/komari-monitor/komari/utils"
 	"github.com/komari-monitor/komari/web/api"
+	"github.com/komari-monitor/komari/web/security"
 
 	"github.com/gin-gonic/gin"
 )
+
+const (
+	minimumTemporaryShareHours = 1
+	maximumTemporaryShareHours = 24 * 30
+)
+
+var temporaryShareAttempts = security.NewAttemptLimiter(5, time.Minute)
 
 // GetSettings 获取自定义配置
 func GetSettings(c *gin.Context) {
@@ -36,6 +48,48 @@ func RevealAPIKey(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	api.RespondSuccess(c, gin.H{"api_key": key})
+}
+
+// GenerateTemporaryShareToken creates a short-lived, high-entropy bearer for
+// private-site access. The token is generated on the server so browser PRNG
+// quality and client-side token construction cannot weaken it.
+func GenerateTemporaryShareToken(c *gin.Context) {
+	var req struct {
+		Hours int `json:"hours"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.RespondError(c, http.StatusBadRequest, "Invalid or missing request body: "+err.Error())
+		return
+	}
+	if req.Hours < minimumTemporaryShareHours || req.Hours > maximumTemporaryShareHours {
+		api.RespondError(c, http.StatusBadRequest, "Temporary share duration must be between 1 and 720 hours")
+		return
+	}
+	identity := c.GetString("uuid")
+	if identity == "" {
+		identity = "peer:" + security.PeerKey(c.Request)
+	}
+	if !temporaryShareAttempts.Allow(identity + "|" + security.PeerKey(c.Request)) {
+		api.RespondError(c, http.StatusTooManyRequests, "Too many temporary share token requests; try again in one minute")
+		return
+	}
+
+	token := utils.GenerateRandomString(43)
+	if token == "" {
+		api.RespondError(c, http.StatusInternalServerError, "Failed to generate temporary share token")
+		return
+	}
+	expiresAt := time.Now().Add(time.Duration(req.Hours) * time.Hour).Unix()
+	if err := config.SetMany(map[string]any{
+		"tempory_share_token":           token,
+		"tempory_share_token_expire_at": expiresAt,
+	}); err != nil {
+		api.RespondError(c, http.StatusInternalServerError, "Failed to save temporary share token")
+		return
+	}
+
+	auditlog.Log(c.ClientIP(), c.GetString("uuid"), "generate temporary share token", "warn")
+	api.RespondSuccess(c, gin.H{"token": token, "expire_at": expiresAt})
 }
 
 // EditSettings 更新自定义配置

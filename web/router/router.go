@@ -88,6 +88,7 @@ func Register(r *gin.Engine) {
 		{
 			settingsGroup.GET("/", admin.GetSettings)
 			settingsGroup.POST("/", admin.EditSettings)
+			settingsGroup.POST("/tempory-share", api.RequireSensitive2FA(), admin.GenerateTemporaryShareToken)
 			settingsGroup.POST("/api-key/reveal", admin.RevealAPIKey)
 			settingsGroup.GET("/xtermjs", admin.GetXtermJSSettings)
 			settingsGroup.POST("/xtermjs", admin.SetXtermJSSettings)

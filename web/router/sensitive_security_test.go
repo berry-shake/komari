@@ -62,6 +62,7 @@ func TestSensitiveRoutesRequireExistingFactor(t *testing.T) {
 		{"POST", "/api/admin/2fa/generate", ""},
 		{"POST", "/api/admin/2fa/disable", ""},
 		{"POST", "/api/admin/settings/", fmt.Sprintf(`{"api_key":%q}`, apiKey)},
+		{"POST", "/api/admin/settings/tempory-share", `{"hours":1}`},
 		{"POST", "/api/admin/settings/api-key/reveal", ""},
 		{"GET", "/api/admin/download/backup", ""},
 		{"POST", "/api/admin/upload/backup", ""},
