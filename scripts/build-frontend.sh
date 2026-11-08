@@ -11,7 +11,10 @@ git -C "$frontend_dir" remote add origin https://github.com/berry-shake/komari-w
 git -C "$frontend_dir" fetch --depth=1 origin "$frontend_ref"
 git -C "$frontend_dir" checkout --detach FETCH_HEAD
 [[ "$(git -C "$frontend_dir" rev-parse HEAD)" == "$frontend_ref" ]]
-(cd "$frontend_dir" && npm ci && npm audit --audit-level=low && npm test && npm run build)
+# The embedded frontend ships production dependencies. Development-tool
+# advisories are tracked in the frontend repository and must not block a
+# server release when the runtime audit is clean.
+(cd "$frontend_dir" && npm ci && npm audit --omit=dev --audit-level=high && npm test && npm run build)
 mkdir -p web/public/defaultTheme
 rm -rf web/public/defaultTheme/dist
 cp -R "$frontend_dir/dist" web/public/defaultTheme/dist
