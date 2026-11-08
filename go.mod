@@ -1,6 +1,6 @@
 module github.com/komari-monitor/komari
 
-go 1.26.8
+go 1.26.10
 
 require (
 	github.com/coreos/go-oidc/v3 v3.15.0
@@ -18,9 +18,9 @@ require (
 	gorm.io/gorm v1.26.1
 )
 
-require golang.org/x/crypto v0.56.0
+require golang.org/x/crypto v0.57.0
 
-require golang.org/x/net v0.57.0
+require golang.org/x/net v0.60.0
 
 require (
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
@@ -58,8 +58,8 @@ require (
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.15.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
