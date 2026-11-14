@@ -24,7 +24,7 @@
 
 服务端与后台更新：berry-shake/komari。Agent 安装及自更新：berry-shake/komari-agent。默认主题：berry-shake/komari-web。镜像：ghcr.io/berry-shake/komari 和 ghcr.io/berry-shake/komari-agent。安装脚本来自 `mod`。
 
-服务端内嵌前端由 `.fork/frontend-ref` 锁定完整 commit SHA。Go module/import 路径、第三方主题和原作者信息保持原值。`--disable-auto-update` 和 `--disable-web-ssh` 行为不变；容器 Agent 通过更换镜像更新。
+服务端内嵌前端由 `.fork/frontend-ref` 锁定完整 commit SHA。Go module/import 路径、第三方主题和原作者信息保持原值。`--disable-auto-update` 行为不变；远程控制（Web SSH 和远程命令）默认关闭，需显式传入 `--enable-web-ssh`（配置 `enable_web_ssh` / 环境变量 `AGENT_ENABLE_WEB_SSH`），旧参数 `--disable-web-ssh` 仍然有效且优先于启用参数；容器 Agent 通过更换镜像更新。
 
 ## CI 和发布
 
