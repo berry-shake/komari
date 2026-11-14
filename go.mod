@@ -1,6 +1,6 @@
 module github.com/komari-monitor/komari
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/coreos/go-oidc/v3 v3.15.0
